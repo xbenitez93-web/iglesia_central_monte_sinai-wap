@@ -1,0 +1,24 @@
+{
+  "name": "Iglesia Central Monte Sinaí - Gestión Eclesial",
+  "short_name": "Monte Sinaí",
+  "description": "Sistema de gestión integral para la congregación: directorio de miembros, agendas, finanzas, minicooperativa y acceso seguro con roles.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1548625361-16a7353f86fb?w=192&auto=format&fit=crop&q=80",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1548625361-16a7353f86fb?w=512&auto=format&fit=crop&q=80",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

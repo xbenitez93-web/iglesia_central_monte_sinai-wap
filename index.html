@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Iglesia Central Monte Sinaí - Gestión Integrada</title>
+    <meta name="description" content="Aplicación integral para la administración eclesial: directorio de miembros, agenda y eventos, diezmos y finanzas, minicooperativa con eventos/campamentos y control de roles." />
+    <meta property="og:title" content="Iglesia Central Monte Sinaí - Gestión Integrada" />
+    <meta property="og:description" content="Aplicación integral para la administración eclesial: directorio de miembros, agenda y eventos, diezmos y finanzas, minicooperativa con eventos/campamentos y control de roles." />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#4f46e5" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Monte Sinaí" />
+    <link rel="apple-touch-icon" href="https://images.unsplash.com/photo-1548625361-16a7353f86fb?w=192&auto=format&fit=crop&q=80" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch((err) => {
+            console.log('SW registration note:', err);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
+

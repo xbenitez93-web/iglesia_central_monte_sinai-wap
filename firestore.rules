@@ -1,0 +1,232 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    // System configuration
+    match /system/{docId} {
+      allow get, list: if true;
+      allow write: if isValidId(docId);
+    }
+
+    // System users
+    match /systemUsers/{userId} {
+      allow get, list: if true;
+      allow write: if isValidId(userId);
+    }
+
+    // Members directory
+    match /members/{memberId} {
+      allow get, list: if true;
+      allow write: if isValidId(memberId);
+    }
+
+    // Families
+    match /families/{familyId} {
+      allow get, list: if true;
+      allow write: if isValidId(familyId);
+    }
+
+    // Events & Cults
+    match /events/{eventId} {
+      allow get, list: if true;
+      allow write: if isValidId(eventId);
+    }
+
+    // Financial Transactions (Tithes, Offerings, Expenses)
+    match /transactions/{txId} {
+      allow get, list: if true;
+      allow write: if isValidId(txId);
+    }
+
+    // Minicoop Accounts
+    match /coopAccounts/{accId} {
+      allow get, list: if true;
+      allow write: if isValidId(accId);
+    }
+
+    // Minicoop Transactions
+    match /coopTransactions/{txId} {
+      allow get, list: if true;
+      allow write: if isValidId(txId);
+    }
+
+    // Microloans
+    match /microLoans/{loanId} {
+      allow get, list: if true;
+      allow write: if isValidId(loanId);
+    }
+
+    // Special Coop Events
+    match /specialEvents/{eventId} {
+      allow get, list: if true;
+      allow write: if isValidId(eventId);
+    }
+
+    // Event Registrations
+    match /eventRegistrations/{regId} {
+      allow get, list: if true;
+      allow write: if isValidId(regId);
+    }
+
+    // Recycle Bin / Papelera de Reciclaje
+    match /deletedItems/{itemId} {
+      allow get, list: if true;
+      allow write: if isValidId(itemId);
+    }
+
+    // Ministry: Worship / Alabanza
+    match /worshipSongs/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /worshipMusicians/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /worshipRehearsals/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /worshipSchedules/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /worshipCastings/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+
+    // Ministry: Dance / Danza
+    match /danceChoreos/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /danceDancers/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /danceRehearsals/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /danceWardrobe/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /danceCastings/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+
+    // Ministry: Women / Damas
+    match /womenActivities/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /womenLeaders/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /womenCells/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /womenPrayers/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+
+    // Ministry: Ushers / Servidores
+    match /usherServers/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /usherRosters/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+
+    // Ministry: Theater / Teatro
+    match /theaterPlays/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /theaterActors/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /theaterRehearsals/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+    match /theaterCastings/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+
+    // Ministry Work Plans
+    match /ministryWorkPlans/{id} {
+      allow get, list: if true;
+      allow write: if isValidId(id);
+    }
+
+    // Chat Groups & Channels
+    match /chatGroups/{groupId} {
+      allow get, list: if true;
+      allow write: if isValidId(groupId);
+    }
+
+    // Chat Messages
+    match /chatMessages/{messageId} {
+      allow get, list: if true;
+      allow write: if isValidId(messageId);
+    }
+
+    // System Push Notifications / Movimientos del Sistema
+    match /notifications/{notifId} {
+      allow get, list: if true;
+      allow write: if isValidId(notifId);
+    }
+
+    // Polls & Voting (Encuestas, Votaciones, Opciones e Imágenes)
+    match /polls/{pollId} {
+      allow get, list: if true;
+      allow write: if isValidId(pollId);
+    }
+
+    // Lock Screen & Screen Saver Media (Imágenes, Videos y Fondos)
+    match /lockScreenMedia/{mediaId} {
+      allow get, list: if true;
+      allow write: if isValidId(mediaId);
+    }
+
+    // Lock Screen & Screen Saver Configuration
+    match /lockScreenConfig/{configId} {
+      allow get, list: if true;
+      allow write: if isValidId(configId);
+    }
+
+    // Custom Roles creados desde Desarrollador
+    match /customRoles/{roleId} {
+      allow get, list: if true;
+      allow write: if isValidId(roleId);
+    }
+
+    // Raffles / Sorteos y Boletos
+    match /raffles/{raffleId} {
+      allow get, list: if true;
+      allow write: if isValidId(raffleId);
+    }
+
+    // Raffle Categories / Categorías de Sorteos
+    match /raffleCategories/{categoryId} {
+      allow get, list: if true;
+      allow write: if isValidId(categoryId);
+    }
+  }
+}

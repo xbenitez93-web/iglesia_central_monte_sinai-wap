@@ -1,0 +1,285 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Perfiles y credenciales de usuarios del sistema eclesial",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "allowedTabs": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string" },
+        "requestedAt": { "type": "string" },
+        "requestedRoleInterest": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "Directorio de miembros y congregantes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "fullName"]
+    },
+    "Family": {
+      "title": "Family",
+      "description": "Núcleos familiares eclesiales",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "familyName": { "type": "string" },
+        "memberIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "familyName"]
+    },
+    "ChurchEvent": {
+      "title": "ChurchEvent",
+      "description": "Eventos y agendas de cultos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "title", "date"]
+    },
+    "FinancialTransaction": {
+      "title": "FinancialTransaction",
+      "description": "Diezmos, ofrendas y egresos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "type", "amount", "date"]
+    },
+    "CoopAccount": {
+      "title": "CoopAccount",
+      "description": "Cuentas de ahorro minicooperativa",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "memberId": { "type": "string" },
+        "currentBalance": { "type": "number" }
+      },
+      "required": ["id", "memberId"]
+    },
+    "CoopTransaction": {
+      "title": "CoopTransaction",
+      "description": "Depósitos y retiros de cooperativa",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "accountId": { "type": "string" },
+        "amount": { "type": "number" }
+      },
+      "required": ["id", "accountId", "amount"]
+    },
+    "MicroLoan": {
+      "title": "MicroLoan",
+      "description": "Microcréditos parroquiales",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "memberId": { "type": "string" },
+        "amount": { "type": "number" }
+      },
+      "required": ["id", "memberId", "amount"]
+    },
+    "SpecialCoopEvent": {
+      "title": "SpecialCoopEvent",
+      "description": "Campamentos y retiros especiales",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" }
+      },
+      "required": ["id", "title"]
+    },
+    "EventRegistration": {
+      "title": "EventRegistration",
+      "description": "Inscripciones a eventos y campamentos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "eventId": { "type": "string" }
+      },
+      "required": ["id", "eventId"]
+    },
+    "DeletedItem": {
+      "title": "DeletedItem",
+      "description": "Elementos en la Papelera de Reciclaje",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "originalId": { "type": "string" },
+        "itemType": { "type": "string" },
+        "title": { "type": "string" }
+      },
+      "required": ["id", "originalId", "itemType", "title"]
+    },
+    "ChurchConfig": {
+      "title": "ChurchConfig",
+      "description": "Configuración del sistema y moneda",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "currencySymbol": { "type": "string" }
+      },
+      "required": ["name", "currencySymbol"]
+    },
+    "ChatGroup": {
+      "title": "ChatGroup",
+      "description": "Grupos y canales de chat eclesial",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Mensajes y testimonios del chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "groupId": { "type": "string" },
+        "content": { "type": "string" }
+      },
+      "required": ["id", "groupId", "content"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "Notificaciones push y movimientos del sistema eclesial",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "category": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "title", "read"]
+    },
+    "LockScreenConfig": {
+      "title": "LockScreenConfig",
+      "description": "Configuración del bloqueo de pantalla y salvapantallas por inactividad",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "timeoutMinutes": { "type": "number" },
+        "theme": { "type": "string" },
+        "animationType": { "type": "string" },
+        "backgroundType": { "type": "string" }
+      },
+      "required": ["enabled", "timeoutMinutes"]
+    },
+    "PollItem": {
+      "title": "PollItem",
+      "description": "Encuestas, votaciones interactivas con imágenes, conteo de votos y ganadores",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "onExpireAction": { "type": "string" },
+        "showLiveCountdown": { "type": "boolean" },
+        "expiredCustomMessage": { "type": "string" },
+        "closedAt": { "type": "string" },
+        "winnerOptionId": { "type": "string" },
+        "closedByCountdown": { "type": "boolean" },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "text": { "type": "string" },
+              "imageUrl": { "type": "string" },
+              "votesCount": { "type": "number" }
+            },
+            "required": ["id", "text", "votesCount"]
+          }
+        },
+        "totalVotes": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "status", "options"]
+    },
+    "LockScreenMediaItem": {
+      "title": "LockScreenMediaItem",
+      "description": "Imágenes, videos y fondos multimedia guardados para el salvapantallas y bloqueo",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "mediaType": { "type": "string" },
+        "url": { "type": "string" },
+        "thumbnail": { "type": "string" },
+        "size": { "type": "number" },
+        "sizeFormatted": { "type": "string" },
+        "isActiveInLockScreen": { "type": "boolean" },
+        "source": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "type"]
+    },
+    "CustomRole": {
+      "title": "CustomRole",
+      "description": "Roles del sistema y permisos de acceso creados desde desarrollador y guardados en Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "color": { "type": "string" },
+        "iconName": { "type": "string" },
+        "allowedTabs": { "type": "array", "items": { "type": "string" } },
+        "isSystem": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "allowedTabs"]
+    },
+    "RaffleItem": {
+      "title": "RaffleItem",
+      "description": "Sorteos, rifas, asignación de boletos y exclusión de números ya sorteados",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "totalTickets": { "type": "number" },
+        "ticketPrice": { "type": "number" },
+        "status": { "type": "string" },
+        "allowDuplicateWinners": { "type": "boolean" },
+        "excludedNumbers": { "type": "array", "items": { "type": "number" } }
+      },
+      "required": ["id", "title", "totalTickets"]
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Iglesia Central Monte Sinaí - Gestión Integrada",
+  "description": "Aplicación integral para la administración eclesial: directorio de miembros, agenda y eventos, diezmos y finanzas, minicooperativa con eventos/campamentos y control de roles.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
