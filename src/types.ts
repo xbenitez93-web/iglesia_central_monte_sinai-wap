@@ -971,6 +971,7 @@ export interface CustomUserVideoPreset {
   createdAt: number;
   url?: string;
   serverUrl?: string; // Permanent universal cross-device URL (e.g. /uploads/video_...mp4)
+  thumbnailUrl?: string;
 }
 
 export interface LockScreenMediaItem {
