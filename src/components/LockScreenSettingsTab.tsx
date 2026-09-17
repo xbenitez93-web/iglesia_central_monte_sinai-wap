@@ -35,7 +35,7 @@ import {
   getLocalPresetsMetaList,
 } from '../lib/deviceMediaStorage';
 import { saveFirestoreDoc, deleteFirestoreDoc, syncFirestoreCollection } from '../lib/firebase';
-import { getBackgroundLoopVideoUrl, parseUniversalVideo, resolveUniversalMediaUrl } from '../lib/videoUtils';
+import { getBackgroundLoopVideoUrl, parseUniversalVideo, resolveUniversalMediaUrl } from '../lib/VideoUtils';
 import { UniversalVideoPlayer } from './UniversalVideoPlayer';
 import { PhotoCaptureModal } from './PhotoCaptureModal';
 import { LockScreenMasterActionDeck } from './LockScreenMasterActionDeck';
