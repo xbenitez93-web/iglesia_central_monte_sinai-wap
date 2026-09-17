@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { SubTabVideo, CustomSectionSubTab } from '../../../types';
 import { UniversalVideoPlayer } from '../../UniversalVideoPlayer';
-import { parseUniversalVideo } from '../../../lib/videoUtils';
+import { parseUniversalVideo } from '../../../lib/VideoUtils';
 
 interface SubTabVideosViewProps {
   subTab: CustomSectionSubTab;

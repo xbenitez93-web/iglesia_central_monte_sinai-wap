@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { parseUniversalVideo, ParsedVideoInfo } from '../lib/videoUtils';
+import { parseUniversalVideo, ParsedVideoInfo } from '../lib/VideoUtils';
 import { Video, ExternalLink, RefreshCw, AlertCircle, Play } from 'lucide-react';
 
 interface UniversalVideoPlayerProps {

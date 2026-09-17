@@ -1,7 +1,7 @@
 import React from 'react';
 import { X, ExternalLink, Play, HelpCircle } from 'lucide-react';
 import { UniversalVideoPlayer } from './UniversalVideoPlayer';
-import { extractYouTubeId, parseUniversalVideo } from '../lib/videoUtils';
+import { extractYouTubeId, parseUniversalVideo } from '../lib/VideoUtils';
 
 interface YouTubeModalProps {
   isOpen: boolean;
