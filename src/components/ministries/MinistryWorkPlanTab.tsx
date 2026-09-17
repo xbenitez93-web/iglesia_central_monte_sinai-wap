@@ -1194,13 +1194,13 @@ ${plan.objective}${goalsText}${tasksText}${plan.notes ? `\n\n📝 *Notas:* ${pla
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                    Enlace de Video o YouTube (Opcional)
+                    Enlace de Video (YouTube, Facebook, TikTok, Instagram, etc.)
                   </label>
                   <input
                     type="url"
                     value={formState.youtubeUrl || ''}
                     onChange={(e) => setFormState({ ...formState, youtubeUrl: e.target.value })}
-                    placeholder="https://youtube.com/watch?v=..."
+                    placeholder="https://... (YouTube, Facebook, TikTok, Instagram o MP4)"
                     className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:outline-hidden"
                   />
                 </div>

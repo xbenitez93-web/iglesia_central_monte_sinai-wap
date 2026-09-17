@@ -22,6 +22,7 @@ import {
   deleteDeviceMediaBlob,
   getCachedDeviceMedia,
   saveCustomUserVideoPreset,
+  saveCustomUserVideoPresetFromUrl,
   getCustomUserVideoPresets,
   deleteCustomUserVideoPreset,
   renameCustomUserVideoPreset,
@@ -31,8 +32,11 @@ import {
   formatFileSize,
   uploadMediaToServer,
   syncLocalPresetsToCloudServer,
+  getLocalPresetsMetaList,
 } from '../lib/deviceMediaStorage';
 import { saveFirestoreDoc, deleteFirestoreDoc, syncFirestoreCollection } from '../lib/firebase';
+import { getBackgroundLoopVideoUrl, parseUniversalVideo, resolveUniversalMediaUrl } from '../lib/videoUtils';
+import { UniversalVideoPlayer } from './UniversalVideoPlayer';
 import { PhotoCaptureModal } from './PhotoCaptureModal';
 import { LockScreenMasterActionDeck } from './LockScreenMasterActionDeck';
 import {
@@ -48,6 +52,7 @@ import {
   Shield,
   Sliders,
   CheckCircle2,
+  AlertCircle,
   Trash2,
   Volume2,
   VolumeX,
@@ -116,6 +121,18 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
   const [externalUrlType, setExternalUrlType] = useState<'video' | 'image'>('video');
   const [isAddingExternalUrl, setIsAddingExternalUrl] = useState(false);
   const [showUrlModal, setShowUrlModal] = useState(false);
+  const [externalUrlEnableAudio, setExternalUrlEnableAudio] = useState(true);
+
+  // Modal confirmation state for 100% reliable in-app deletions (avoids iframe confirm() blocks)
+  const [itemToDelete, setItemToDelete] = useState<{
+    id: string;
+    name: string;
+    type: 'custom_video_preset' | 'firestore_media' | 'uploaded_media';
+    title?: string;
+    url?: string;
+    thumbnail?: string;
+  } | null>(null);
+  const [isDeletingMedia, setIsDeletingMedia] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoPresetInputRef = useRef<HTMLInputElement | null>(null);
@@ -124,7 +141,45 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
   // Subscribe in real-time to lockScreenMedia in Firestore
   useEffect(() => {
     const unsub = syncFirestoreCollection<LockScreenMediaItem>('lockScreenMedia', (items) => {
-      setFirestoreMediaList(items || []);
+      const validItems = items || [];
+      setFirestoreMediaList(validItems);
+
+      if (Array.isArray(validItems)) {
+        const remoteVideos = validItems.filter((m) => m.type === 'video' && m.url);
+        setCustomVideoPresets((prev) => {
+          // Keep local device-stored presets (those with local blobKey or in local metadata list)
+          const localMetaList = getLocalPresetsMetaList();
+          const localMetaIds = new Set(localMetaList.map((p) => p.id));
+          const localOnly = prev.filter(
+            (p) => (p.blobKey && p.blobKey.length > 0) || localMetaIds.has(p.id)
+          );
+
+          // Build current remote presets directly from live Firestore collection
+          const remotePresets: CustomUserVideoPreset[] = remoteVideos.map((rv) => ({
+            id: rv.id,
+            name: rv.name,
+            blobKey: '',
+            type: rv.mediaType || 'video/mp4',
+            createdAt: new Date(rv.createdAt).getTime() || Date.now(),
+            url: rv.url,
+            serverUrl: rv.url,
+          }));
+
+          // Merge uniquely avoiding duplicates
+          const combined: CustomUserVideoPreset[] = [...localOnly];
+          const existingUrls = new Set(combined.map((p) => p.url));
+          const existingIds = new Set(combined.map((p) => p.id));
+
+          for (const rp of remotePresets) {
+            if (!existingUrls.has(rp.url) && !existingIds.has(rp.id)) {
+              combined.push(rp);
+              existingUrls.add(rp.url);
+              existingIds.add(rp.id);
+            }
+          }
+          return combined;
+        });
+      }
     });
     return () => {
       unsub();
@@ -495,7 +550,7 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
     }
   };
 
-  // Handle adding external media URL (MP4 video or image link)
+  // Handle adding external media URL (MP4 video, YouTube, social networks, or image link)
   const handleAddExternalUrlMedia = async () => {
     if (!externalUrlInput.trim()) {
       onShowToast('Introduce una URL válida de imagen o video.', 'danger');
@@ -504,9 +559,24 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
     setIsAddingExternalUrl(true);
     try {
       const cleanUrl = externalUrlInput.trim();
-      const cleanName =
-        externalUrlName.trim() ||
-        (externalUrlType === 'video' ? 'Video Remoto' : 'Imagen Remota');
+      let resolvedUrl = cleanUrl;
+      let thumbnail = '';
+      let platformName = 'Enlace Remoto';
+      let cleanName = externalUrlName.trim();
+
+      if (externalUrlType === 'video') {
+        const resolved = await resolveUniversalMediaUrl(cleanUrl);
+        resolvedUrl = resolved.canonicalUrl || cleanUrl;
+        thumbnail = resolved.thumbnailUrl || '';
+        platformName = resolved.platform;
+        if (!cleanName) {
+          cleanName = resolved.title || 'Video Remoto';
+        }
+      } else {
+        thumbnail = cleanUrl;
+        if (!cleanName) cleanName = 'Imagen Remota';
+      }
+
       const mediaDocId = `media_url_${Date.now()}`;
 
       const mediaDoc: LockScreenMediaItem = {
@@ -514,17 +584,25 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
         name: cleanName,
         type: externalUrlType,
         mediaType: externalUrlType === 'video' ? 'video/mp4' : 'image/jpeg',
-        url: cleanUrl,
-        thumbnail: externalUrlType === 'image' ? cleanUrl : '',
+        url: resolvedUrl,
+        thumbnail,
         isActiveInLockScreen: true,
         source: 'external_url',
+        notes: `Plataforma: ${platformName}. Sonido: ${externalUrlEnableAudio ? 'Activo' : 'Silenciado'}`,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         createdBy: 'Desarrollador',
       };
 
+      let createdPresetId = '';
+      if (externalUrlType === 'video') {
+        const newPreset = await saveCustomUserVideoPresetFromUrl(resolvedUrl, cleanName, thumbnail);
+        createdPresetId = newPreset.id;
+        setCustomVideoPresets((prev) => [newPreset, ...prev.filter((p) => p.id !== newPreset.id)]);
+      }
+
       await saveFirestoreDoc('lockScreenMedia', mediaDocId, mediaDoc);
-      setUploadedPreviewUrl(cleanUrl);
+      setUploadedPreviewUrl(resolvedUrl);
       setUploadedFileName(cleanName);
 
       const nextConfig: LockScreenConfig = {
@@ -532,15 +610,17 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
         backgroundType: externalUrlType,
         mediaType: externalUrlType,
         mediaName: cleanName,
-        mediaUrl: cleanUrl,
+        mediaUrl: resolvedUrl,
         presetVideoId: '',
-        customVideoPresetId: '',
+        customVideoPresetId: createdPresetId,
+        videoMuted: externalUrlType === 'video' ? !externalUrlEnableAudio : (formData.videoMuted ?? true),
         updatedAt: Date.now(),
       };
 
+      const audioNotice = externalUrlType === 'video' ? (externalUrlEnableAudio ? ' (Audio habilitado 🔊)' : ' (Silenciado 🔇)') : '';
       handleApplyUpdate(
         nextConfig,
-        `🌐 Fondo remoto "${cleanName}" guardado en Firestore y activado en salvapantallas.`
+        `🌐 Fondo "${cleanName}" (${platformName}) guardado en base de datos Firestore y activado en salvapantallas${audioNotice}.`
       );
       setExternalUrlInput('');
       setExternalUrlName('');
@@ -638,19 +718,18 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
     }
   };
 
-  // Delete an item from Firestore database
-  const handleDeleteFirestoreMediaItem = async (itemId: string, itemName: string, e: React.MouseEvent) => {
+  // Prompt modal deletion for Firestore media item
+  const handleDeleteFirestoreMediaItem = (itemId: string, itemName: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm(`¿Deseas eliminar "${itemName}" de la base de datos Firestore y del dispositivo?`)) {
-      return;
-    }
-    try {
-      await deleteFirestoreDoc('lockScreenMedia', itemId);
-      onShowToast(`"${itemName}" eliminado de la base de datos Firestore.`, 'info');
-    } catch (err) {
-      console.error('Error eliminando de Firestore:', err);
-      onShowToast('Error al eliminar de Firestore.', 'danger');
-    }
+    const item = firestoreMediaList.find((m) => m.id === itemId);
+    setItemToDelete({
+      id: itemId,
+      name: itemName,
+      type: 'firestore_media',
+      title: `¿Eliminar "${itemName}" de Firestore?`,
+      url: item?.url,
+      thumbnail: item?.thumbnail,
+    });
   };
 
   // Synchronize local videos to universal cloud server for cross-device view (phone -> PC)
@@ -744,41 +823,157 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
     );
   };
 
-  // Delete a custom user video preset
-  const handleDeleteCustomVideoPreset = async (presetId: string, e: React.MouseEvent) => {
+  // Prompt modal deletion for custom user video preset
+  const handleDeleteCustomVideoPreset = (presetId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const target = customVideoPresets.find((p) => p.id === presetId);
-    if (!window.confirm(`¿Deseas eliminar el preset de video "${target?.name || 'este video'}"?`)) {
-      return;
-    }
-    await deleteCustomUserVideoPreset(presetId);
-    const remaining = customVideoPresets.filter((p) => p.id !== presetId);
-    setCustomVideoPresets(remaining);
+    setItemToDelete({
+      id: presetId,
+      name: target?.name || 'Video Preset',
+      type: 'custom_video_preset',
+      title: `¿Eliminar preset de video "${target?.name || 'este video'}"?`,
+      url: target?.url || target?.serverUrl,
+    });
+  };
 
-    // If deleted preset was currently active, switch to another or first spiritual preset
-    if (formData.customVideoPresetId === presetId) {
-      if (remaining.length > 0) {
-        handleSelectCustomVideoPreset(remaining[0]);
-      } else {
-        const defaultPreset = SPIRITUAL_VIDEO_PRESETS[0];
+  // Prompt modal deletion for uploaded media
+  const handleRemoveUploadedMedia = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setItemToDelete({
+      id: 'eclesia_lockscreen_uploaded_media',
+      name: uploadedFileName || 'Fotografía activa en el salvapantallas',
+      type: 'uploaded_media',
+      title: '¿Quitar fotografía subida del salvapantallas?',
+      url: uploadedPreviewUrl || undefined,
+    });
+  };
+
+  // 100% Robust Deletion Execution across Firestore, IndexedDB, Memory Cache, and State
+  const handleExecuteDelete = async () => {
+    if (!itemToDelete) return;
+    setIsDeletingMedia(true);
+    const { id, name, type, url } = itemToDelete;
+
+    try {
+      if (type === 'custom_video_preset') {
+        // 1. Delete from IndexedDB and local storage meta list
+        await deleteCustomUserVideoPreset(id);
+
+        // 2. Delete from Firestore collection lockScreenMedia (both raw and prefixed IDs)
+        await deleteFirestoreDoc('lockScreenMedia', id);
+        await deleteFirestoreDoc('lockScreenMedia', `media_vid_${id}`);
+
+        // 3. Optimistic local state update
+        setCustomVideoPresets((prev) => prev.filter((p) => p.id !== id && p.id !== `media_vid_${id}`));
+        setFirestoreMediaList((prev) => prev.filter((m) => m.id !== id && m.id !== `media_vid_${id}`));
+
+        // 4. Check if currently active in lock screen configuration
+        const isActive =
+          formData.customVideoPresetId === id ||
+          formData.customVideoPresetId === `media_vid_${id}` ||
+          (url && formData.mediaUrl === url) ||
+          formData.mediaName === name;
+
+        if (isActive) {
+          const defaultPreset = SPIRITUAL_VIDEO_PRESETS[0];
+          const nextConfig: LockScreenConfig = {
+            ...formData,
+            backgroundType: 'video',
+            mediaType: 'video',
+            customVideoPresetId: '',
+            presetVideoId: defaultPreset.id,
+            mediaName: defaultPreset.name,
+            mediaUrl: defaultPreset.videoUrl,
+            updatedAt: Date.now(),
+          };
+          setUploadedPreviewUrl(null);
+          setUploadedFileName('');
+          await handleApplyUpdate(
+            nextConfig,
+            `✓ Preset "${name}" eliminado al 100% de Firestore y del dispositivo. Se activó "${defaultPreset.name}".`
+          );
+        } else {
+          onShowToast(`✓ Preset "${name}" eliminado correctamente de Firestore y del dispositivo.`, 'success');
+        }
+      } else if (type === 'firestore_media') {
+        // 1. Delete from Firestore database
+        await deleteFirestoreDoc('lockScreenMedia', id);
+
+        // 2. Delete from local device presets if cached
+        const cleanId = id.startsWith('media_vid_') ? id.replace('media_vid_', '') : id;
+        await deleteCustomUserVideoPreset(id);
+        await deleteCustomUserVideoPreset(cleanId);
+
+        // 3. Optimistic local state update
+        setFirestoreMediaList((prev) => prev.filter((m) => m.id !== id));
+        setCustomVideoPresets((prev) => prev.filter((p) => p.id !== id && p.id !== cleanId));
+
+        // 4. Check if currently active in lock screen
+        const isActive =
+          (url && formData.mediaUrl === url) ||
+          formData.mediaName === name ||
+          formData.customVideoPresetId === id ||
+          formData.customVideoPresetId === cleanId;
+
+        if (isActive) {
+          const defaultPreset = SPIRITUAL_VIDEO_PRESETS[0];
+          const nextConfig: LockScreenConfig = {
+            ...formData,
+            backgroundType: 'video',
+            mediaType: 'video',
+            customVideoPresetId: '',
+            presetVideoId: defaultPreset.id,
+            mediaName: defaultPreset.name,
+            mediaUrl: defaultPreset.videoUrl,
+            updatedAt: Date.now(),
+          };
+          setUploadedPreviewUrl(null);
+          setUploadedFileName('');
+          await handleApplyUpdate(
+            nextConfig,
+            `✓ Archivo "${name}" eliminado de la base de datos. Se restauró el salvapantallas a "${defaultPreset.name}".`
+          );
+        } else {
+          onShowToast(`✓ "${name}" eliminado de la base de datos Firestore y del dispositivo.`, 'success');
+        }
+      } else if (type === 'uploaded_media') {
+        // 1. Delete local media blob
+        await deleteDeviceMediaBlob('eclesia_lockscreen_uploaded_media');
+        setUploadedPreviewUrl(null);
+        setUploadedFileName('');
+
+        // 2. Delete any matching device_upload document in Firestore lockScreenMedia
+        const matchingDocs = firestoreMediaList.filter(
+          (m) =>
+            m.source === 'device_upload' &&
+            (m.name === name || (url && m.url === url) || (uploadedPreviewUrl && m.url === uploadedPreviewUrl))
+        );
+        for (const m of matchingDocs) {
+          await deleteFirestoreDoc('lockScreenMedia', m.id);
+        }
+        if (matchingDocs.length > 0) {
+          setFirestoreMediaList((prev) => prev.filter((m) => !matchingDocs.some((d) => d.id === m.id)));
+        }
+
+        // 3. Reset lockscreen background to default gradient
         const nextConfig: LockScreenConfig = {
           ...formData,
-          backgroundType: 'video',
-          mediaType: 'video',
-          customVideoPresetId: '',
-          presetVideoId: defaultPreset.id,
-          mediaName: defaultPreset.name,
-          mediaUrl: defaultPreset.videoUrl,
+          backgroundType: 'gradient',
+          mediaUrl: undefined,
+          mediaName: undefined,
+          mediaType: undefined,
+          presetVideoId: undefined,
+          customVideoPresetId: undefined,
           updatedAt: Date.now(),
         };
-        setUploadedPreviewUrl(null);
-        handleApplyUpdate(
-          nextConfig,
-          `Preset eliminado. Se activó el preset espiritual "${defaultPreset.name}".`
-        );
+        await handleApplyUpdate(nextConfig, '✓ Fotografía multimedia eliminada del salvapantallas.');
       }
-    } else {
-      onShowToast('Preset de video eliminado correctamente.', 'info');
+    } catch (err: any) {
+      console.error('Error al ejecutar eliminación multimedia:', err);
+      onShowToast(`Error al eliminar archivo: ${err?.message || 'Error en base de datos'}`, 'danger');
+    } finally {
+      setIsDeletingMedia(false);
+      setItemToDelete(null);
     }
   };
 
@@ -795,25 +990,6 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
       updatedAt: Date.now(),
     };
     handleApplyUpdate(nextConfig, `Preset espiritual "${preset.name}" seleccionado.`);
-  };
-
-  const handleRemoveUploadedMedia = async () => {
-    await deleteDeviceMediaBlob('eclesia_lockscreen_uploaded_media');
-    setUploadedPreviewUrl(null);
-    setUploadedFileName('');
-
-    const nextConfig: LockScreenConfig = {
-      ...formData,
-      backgroundType: 'gradient',
-      mediaUrl: undefined,
-      mediaName: undefined,
-      mediaType: undefined,
-      presetVideoId: undefined,
-      customVideoPresetId: undefined,
-      updatedAt: Date.now(),
-    };
-
-    handleApplyUpdate(nextConfig, 'Archivo multimedia eliminado del salvapantallas.');
   };
 
   // Handle lock screen logo upload
@@ -1410,29 +1586,46 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
                         }}
                       />
                     )}
-                    {previewVideoUrl && (
-                      <video
-                        key={previewVideoUrl}
-                        src={previewVideoUrl}
-                        autoPlay
-                        loop
-                        muted
-                        playsInline
-                        preload="auto"
-                        onLoadedMetadata={(e) => {
-                          e.currentTarget.muted = true;
-                          e.currentTarget.play().catch(() => {});
-                        }}
-                        onCanPlay={(e) => {
-                          e.currentTarget.muted = true;
-                          e.currentTarget.play().catch(() => {});
-                        }}
-                        className="absolute inset-0 w-full h-full object-cover"
-                        style={{
-                          filter: formData.blurAmount > 0 ? `blur(${Math.min(formData.blurAmount, 6)}px)` : undefined,
-                        }}
-                      />
-                    )}
+                    {previewVideoUrl && (() => {
+                      const loopInfo = getBackgroundLoopVideoUrl(previewVideoUrl);
+                      if (loopInfo.isIframe) {
+                        return (
+                          <iframe
+                            key={loopInfo.url}
+                            src={loopInfo.url}
+                            title="Video Preview"
+                            className="absolute inset-0 w-full h-full border-0 pointer-events-none scale-110"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            style={{
+                              filter: formData.blurAmount > 0 ? `blur(${Math.min(formData.blurAmount, 6)}px)` : undefined,
+                            }}
+                          />
+                        );
+                      }
+                      return (
+                        <video
+                          key={previewVideoUrl}
+                          src={loopInfo.url}
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          preload="auto"
+                          onLoadedMetadata={(e) => {
+                            e.currentTarget.muted = true;
+                            e.currentTarget.play().catch(() => {});
+                          }}
+                          onCanPlay={(e) => {
+                            e.currentTarget.muted = true;
+                            e.currentTarget.play().catch(() => {});
+                          }}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          style={{
+                            filter: formData.blurAmount > 0 ? `blur(${Math.min(formData.blurAmount, 6)}px)` : undefined,
+                          }}
+                        />
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -1790,15 +1983,30 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
                         Sube tus propios videos grabados o descargados (MP4, MOV, WebM) para proyectarlos automáticamente cada vez que se bloquee la pantalla.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => videoPresetInputRef.current?.click()}
-                      disabled={isUploading}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/30 transition-all flex items-center space-x-2 cursor-pointer"
-                    >
-                      <Upload className="w-4 h-4" />
-                      <span>Subir Mi Primer Video Preset</span>
-                    </button>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => videoPresetInputRef.current?.click()}
+                        disabled={isUploading}
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/30 transition-all flex items-center space-x-2 cursor-pointer disabled:opacity-50"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>Subir Video Preset</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExternalUrlType('video');
+                          setExternalUrlInput('');
+                          setExternalUrlName('');
+                          setShowUrlModal(true);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-bold text-xs shadow-sm transition-all flex items-center space-x-1.5 cursor-pointer"
+                      >
+                        <Globe className="w-4 h-4" />
+                        <span>+ Video por URL</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1869,7 +2077,12 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
                                   • {new Date(preset.createdAt).toLocaleDateString()}
                                 </p>
                                 <div className="flex items-center space-x-1.5 mt-1">
-                                  {preset.serverUrl ? (
+                                  {preset.url && (preset.url.startsWith('http://') || preset.url.startsWith('https://')) ? (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 text-[9px] font-bold flex items-center space-x-1 border border-indigo-500/20">
+                                      <Globe className="w-2.5 h-2.5" />
+                                      <span>URL Web (Multidispositivo)</span>
+                                    </span>
+                                  ) : preset.serverUrl ? (
                                     <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 text-[9px] font-bold flex items-center space-x-1 border border-emerald-500/20">
                                       <Cloud className="w-2.5 h-2.5" />
                                       <span>Nube (PC & Móvil)</span>
@@ -2290,9 +2503,9 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* SLIDERS: OPACITY & BLUR */}
-        <div className="grid sm:grid-cols-2 gap-4 pt-2">
-          <div className="space-y-1.5">
+        {/* SLIDERS: OPACITY & BLUR & AUDIO */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+          <div className="space-y-1.5 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800">
             <div className="flex justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
               <span>Oscurecimiento del fondo:</span>
               <span className="font-mono">{Math.round((formData.videoOpacity ?? 0.6) * 100)}%</span>
@@ -2317,7 +2530,7 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
             </p>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800">
             <div className="flex justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
               <span>Desenfoque ambiental (Blur):</span>
               <span className="font-mono">{formData.blurAmount ?? 0}px</span>
@@ -2340,6 +2553,66 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               Añade un elegante efecto de cristal esmerilado cinematográfico al fondo.
             </p>
+          </div>
+
+          {/* AUDIO EN SALVAPANTALLAS */}
+          <div className="space-y-2 p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/60 flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
+                  {formData.videoMuted ? (
+                    <VolumeX className="w-4 h-4 text-slate-400" />
+                  ) : (
+                    <Volume2 className="w-4 h-4 text-emerald-500 animate-pulse" />
+                  )}
+                  <span>Audio del Video:</span>
+                </span>
+                <span
+                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                    formData.videoMuted
+                      ? 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                  }`}
+                >
+                  {formData.videoMuted ? 'Silenciado' : 'Con Sonido'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1">
+                Reproduce el sonido de YouTube, Facebook, enlaces web o videos subidos al bloquear.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const nextMuted = !(formData.videoMuted ?? true);
+                handleApplyUpdate(
+                  {
+                    ...formData,
+                    videoMuted: nextMuted,
+                    updatedAt: Date.now(),
+                  },
+                  nextMuted ? '🔇 Audio de videos silenciado.' : '🔊 Audio de videos activado en salvapantallas.'
+                );
+              }}
+              className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-sm active:scale-95 ${
+                formData.videoMuted
+                  ? 'bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30'
+              }`}
+            >
+              {formData.videoMuted ? (
+                <>
+                  <Volume2 className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Activar Sonido del Video</span>
+                </>
+              ) : (
+                <>
+                  <VolumeX className="w-3.5 h-3.5" />
+                  <span>Silenciar Video</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -2699,19 +2972,229 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  URL directa del archivo {externalUrlType === 'video' ? '(MP4 o WebM)' : '(JPG, PNG o WebP)'}:
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    {externalUrlType === 'video'
+                      ? 'Enlace URL del video (YouTube, Facebook, TikTok, Instagram, Vimeo, Drive, MP4):'
+                      : 'URL de la imagen (JPG, PNG, WebP):'}
+                  </label>
+                  {externalUrlType === 'video' && externalUrlInput && parseUniversalVideo(externalUrlInput).isValid && (
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                      {parseUniversalVideo(externalUrlInput).platformLabel}
+                    </span>
+                  )}
+                </div>
                 <input
                   type="url"
                   value={externalUrlInput}
                   onChange={(e) => setExternalUrlInput(e.target.value)}
-                  placeholder="https://ejemplo.com/recursos/fondo.mp4"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500"
+                  placeholder={
+                    externalUrlType === 'video'
+                      ? 'https://www.youtube.com/..., Facebook, TikTok, Instagram o archivo .mp4'
+                      : 'https://ejemplo.com/recursos/fondo.jpg'
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 font-mono"
                 />
+
+                {/* Quick samples for video */}
+                {externalUrlType === 'video' && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[10px] text-slate-400 font-medium">Ejemplos para probar:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExternalUrlInput('https://www.youtube.com/watch?v=k1-TrAvp_xs');
+                        if (!externalUrlName) setExternalUrlName('Video Musical en Vivo HD');
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 text-[10px] font-bold hover:bg-red-100 dark:hover:bg-red-900/50 cursor-pointer"
+                    >
+                      YouTube
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExternalUrlInput('https://www.facebook.com/watch/?v=10153231379946729');
+                        if (!externalUrlName) setExternalUrlName('Video Comunitario Facebook');
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 text-[10px] font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 cursor-pointer"
+                    >
+                      Facebook
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExternalUrlInput('https://www.tiktok.com/@scout2015/video/6718335390845095173');
+                        if (!externalUrlName) setExternalUrlName('Video de Mascotas en TikTok (Scout)');
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-cyan-300 text-[10px] font-bold hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                    >
+                      TikTok
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExternalUrlInput('https://www.instagram.com/reel/C8xYz123456/');
+                        if (!externalUrlName) setExternalUrlName('Reel Instagram');
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-purple-500/10 to-pink-500/10 text-pink-600 dark:text-pink-400 text-[10px] font-bold hover:opacity-80 cursor-pointer border border-pink-500/20"
+                    >
+                      Instagram
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExternalUrlInput('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
+                        if (!externalUrlName) setExternalUrlName('Fondo de Fuego Celestial MP4');
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 cursor-pointer"
+                    >
+                      MP4 Directo
+                    </button>
+                  </div>
+                )}
+
+                {/* Live video preview in modal */}
+                {externalUrlType === 'video' && externalUrlInput.trim() && (
+                  <div className="mt-3 p-3 rounded-2xl bg-slate-950 text-white border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-300 flex items-center space-x-1.5">
+                        <Play className="w-3.5 h-3.5 text-indigo-400 fill-current" />
+                        <span>Vista Previa del Video ({parseUniversalVideo(externalUrlInput).platformLabel})</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-400">
+                        Compatible con salvapantallas
+                      </span>
+                    </div>
+                    <UniversalVideoPlayer
+                      url={externalUrlInput}
+                      title={externalUrlName || 'Vista previa'}
+                      autoPlay={false}
+                      controls={true}
+                      showBadge={true}
+                      className="max-h-52"
+                    />
+
+                    {/* Guía interactiva si el usuario pegó un enlace de Facebook (especialmente /share/v/ o /share/r/) */}
+                    {(externalUrlInput.includes('facebook.com') || externalUrlInput.includes('fb.watch')) && (
+                      <div className="mt-2.5 p-2.5 rounded-xl bg-blue-950/80 border border-blue-800/80 text-left space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start space-x-2">
+                            <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-[11px] font-bold text-blue-200">
+                                ¿Dice «Video no disponible» en la vista previa de Facebook?
+                              </p>
+                              <p className="text-[10px] text-blue-300/90 leading-relaxed mt-0.5">
+                                Facebook restringe la reproducción en sitios web si el enlace es de la app móvil (<code>/share/v/</code>) o si el video no es público.
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={externalUrlInput}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold flex items-center space-x-1 shrink-0 shadow-sm cursor-pointer"
+                          >
+                            <span>Abrir video ↗</span>
+                          </a>
+                        </div>
+
+                        <div className="p-2 rounded-lg bg-slate-900/90 border border-blue-900/60 text-[10px] space-y-1 text-slate-300">
+                          <p className="font-semibold text-blue-300">
+                            💡 Solución en 2 pasos para que se reproduzca aquí:
+                          </p>
+                          <p>
+                            <strong>1. Copiar enlace directo:</strong> Toca el botón <em>«Abrir video ↗»</em> arriba. En la barra de tu navegador copia la dirección final (formato <code>facebook.com/watch/?v=...</code> o <code>facebook.com/reel/...</code>) y pégala en este campo.
+                          </p>
+                          <p>
+                            <strong>2. Privacidad pública:</strong> El video debe ser <strong>Público</strong> (ícono de mundo 🌍 en Facebook). Videos de grupos cerrados o de amigos no permiten verse en otras páginas.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Guía interactiva si el usuario pegó un enlace de TikTok */}
+                    {externalUrlInput.includes('tiktok.com') && (
+                      <div className="mt-2.5 p-2.5 rounded-xl bg-slate-900/90 border border-pink-500/40 text-left space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start space-x-2">
+                            <Info className="w-4 h-4 text-pink-400 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-[11px] font-bold text-pink-200">
+                                ¿Dice «Este vídeo no está disponible» en TikTok?
+                              </p>
+                              <p className="text-[10px] text-slate-300 leading-relaxed mt-0.5">
+                                TikTok restringe la reproducción si el video fue marcado como privado por su autor, si fue borrado o si proviene de un enlace corto móvil (<code>vm.tiktok.com</code>) sin resolver.
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={externalUrlInput}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 rounded-lg bg-black text-cyan-300 border border-pink-500/40 hover:bg-slate-800 text-[10px] font-bold flex items-center space-x-1 shrink-0 shadow-sm cursor-pointer"
+                          >
+                            <span>Abrir TikTok ↗</span>
+                          </a>
+                        </div>
+
+                        <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 text-[10px] space-y-1 text-slate-300">
+                          <p className="font-semibold text-pink-300">
+                            💡 Consejos para que TikTok se reproduzca correctamente:
+                          </p>
+                          <p>
+                            <strong>1. Video público:</strong> Abre el video en TikTok y asegúrate de que sea 100% público (no cuenta privada ni video sólo para amigos).
+                          </p>
+                          <p>
+                            <strong>2. Permiso de inserción del autor:</strong> En TikTok, los creadores pueden activar o desactivar la opción <em>«Permitir inserción»</em> en ajustes de privacidad. Si está restringido por el autor, abre el video directamente con el botón superior.
+                          </p>
+                          <p>
+                            <strong>3. Autoguardado:</strong> Al pulsar <em>«Guardar y Activar Fondo Remoto»</em>, nuestro servidor consulta automáticamente a TikTok para resolver el título y la miniatura oficial.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  Asegúrate de que la URL sea accesible públicamente y termine en un formato de medios compatible.
+                  {externalUrlType === 'video'
+                    ? 'Acepta enlaces de YouTube, Facebook, Instagram, TikTok, X (Twitter), Vimeo, Google Drive y archivos directos MP4/WebM.'
+                    : 'Asegúrate de que la URL sea accesible públicamente y termine en formato de imagen compatible.'}
                 </p>
+
+                {/* AUDIO PREFERENCE SWITCH FOR THE VIDEO URL */}
+                {externalUrlType === 'video' && (
+                  <div className="mt-3 p-3 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex items-center justify-between">
+                    <div className="space-y-0.5 pr-2">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
+                        {externalUrlEnableAudio ? (
+                          <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+                        ) : (
+                          <VolumeX className="w-4 h-4 text-slate-400" />
+                        )}
+                        <span>¿Reproducir con sonido en el salvapantallas?</span>
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {externalUrlEnableAudio
+                          ? '🔊 El video se proyectará con audio activo al bloquear la pantalla.'
+                          : '🔇 El video se proyectará en silencio (puedes activar el audio en cualquier momento).'}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setExternalUrlEnableAudio(!externalUrlEnableAudio)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 shadow-sm ${
+                        externalUrlEnableAudio
+                          ? 'bg-emerald-600 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/20'
+                          : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {externalUrlEnableAudio ? '🔊 Con Sonido' : '🔇 Sin Sonido'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2735,6 +3218,93 @@ export const LockScreenSettingsTab: React.FC<LockScreenSettingsTabProps> = ({
                   <Database className="w-3.5 h-3.5" />
                 )}
                 <span>{isAddingExternalUrl ? 'Guardando en Base de Datos...' : 'Guardar en Base de Datos y Proyectar'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM DELETE MODAL - 100% FUNCTIONAL IN IFRAMES & DESKTOP */}
+      {itemToDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-150"
+        >
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+            <div className="flex items-start space-x-3.5">
+              <div className="p-3 rounded-2xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                  {itemToDelete.title || '¿Eliminar archivo permanentemente?'}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Esta acción eliminará el archivo de la base de datos Firestore y del almacenamiento local del dispositivo.
+                </p>
+              </div>
+            </div>
+
+            {/* ITEM PREVIEW CARD */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 flex items-center space-x-3">
+              {itemToDelete.thumbnail || itemToDelete.url ? (
+                <div className="w-16 h-12 rounded-xl bg-black overflow-hidden shrink-0">
+                  <img
+                    src={itemToDelete.thumbnail || itemToDelete.url}
+                    alt={itemToDelete.name}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                    crossOrigin="anonymous"
+                  />
+                </div>
+              ) : (
+                <div className="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <FileVideo className="w-6 h-6" />
+                </div>
+              )}
+              <div className="truncate flex-1">
+                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  {itemToDelete.name}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 capitalize">
+                  {itemToDelete.type === 'custom_video_preset'
+                    ? 'Preset de Video Personalizado'
+                    : itemToDelete.type === 'firestore_media'
+                    ? 'Fondo Registrado en Firestore'
+                    : 'Fotografía Subida'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 text-[11px] text-amber-800 dark:text-amber-300 flex items-start space-x-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <span>
+                Si este fondo está actualmente activo en el salvapantallas, se cambiará automáticamente a un fondo predeterminado seguro para evitar pantallas en blanco.
+              </span>
+            </div>
+
+            <div className="flex justify-end items-center space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                disabled={isDeletingMedia}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteDelete}
+                disabled={isDeletingMedia}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingMedia ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                <span>{isDeletingMedia ? 'Eliminando...' : 'Sí, Eliminar Definitivamente'}</span>
               </button>
             </div>
           </div>

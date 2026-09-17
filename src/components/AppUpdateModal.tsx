@@ -123,36 +123,31 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
       localStorage.setItem('eclesia_last_updated_at', String(Date.now()));
       localStorage.removeItem('eclesia_dismissed_update_version');
 
-      // Step 4: Finish installation & reload
+      // Step 4: Finish installation
       await new Promise((resolve) => setTimeout(resolve, 450));
       setInstallProgress(100);
-      setInstallStatusText('¡Instalación completada! Reiniciando la aplicación...');
+      setInstallStatusText('¡Instalación completada con éxito!');
 
       if (onInstalledSuccess) {
         onInstalledSuccess();
       }
 
+      // Automatically remove download screen and close modal so user can continue using the app smoothly
       setTimeout(() => {
-        // If there's an external custom download url, navigate to it; otherwise reload current app cleanly
-        if (
-          updateInfo.downloadUrl &&
-          updateInfo.downloadUrl.startsWith('http') &&
-          !updateInfo.downloadUrl.includes(window.location.host)
-        ) {
-          window.location.href = updateInfo.downloadUrl;
-        } else {
-          // Hard reload with cache-busting timestamp
-          const cleanUrl = `${window.location.origin}${window.location.pathname}?updated=true&v=${encodeURIComponent(
-            updateInfo.version
-          )}&t=${Date.now()}`;
-          window.location.href = cleanUrl;
-        }
-      }, 700);
+        setIsInstalling(false);
+        onClose();
+      }, 650);
     } catch (err) {
       console.error('Error during installation:', err);
-      // Fallback: still mark and reload
+      // Fallback: still mark and close cleanly
       localStorage.setItem('eclesia_installed_version', updateInfo.version);
-      window.location.reload();
+      if (onInstalledSuccess) {
+        onInstalledSuccess();
+      }
+      setTimeout(() => {
+        setIsInstalling(false);
+        onClose();
+      }, 650);
     }
   };
 

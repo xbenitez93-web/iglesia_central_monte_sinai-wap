@@ -1392,11 +1392,11 @@ export const MinistryCastingTab: React.FC<MinistryCastingTabProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Enlace de Video de Referencia (YouTube)
+                  Enlace de Video de Referencia (YouTube, Facebook, TikTok, Instagram, etc.)
                 </label>
                 <input
                   type="url"
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder="https://... (YouTube, Facebook, TikTok, Instagram o MP4)"
                   value={castingForm.youtubeReferenceUrl || ''}
                   onChange={(e) => setCastingForm({ ...castingForm, youtubeReferenceUrl: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"

@@ -1,404 +1,544 @@
+import React, { useState, useMemo } from 'react';
 import {
-  SystemRole,
-  CustomRole,
-  UserProfile,
-  ChurchConfig,
-  DEFAULT_MINISTRIES,
-  DEFAULT_CUSTOM_SECTIONS,
-  Member,
-  CustomSectionItem,
-} from '../types';
+  X,
+  Shield,
+  KeyRound,
+  Users,
+  Star,
+  Sparkles,
+  UserCheck,
+  BookOpen,
+  Heart,
+  DollarSign,
+  Compass,
+  Music,
+  Award,
+  Lock,
+  Layers,
+  Check,
+  Database,
+  Cloud,
+  Eye,
+  Info,
+} from 'lucide-react';
+import { ChurchConfig, CustomRole } from '../../types';
+import { getAllAvailableSystemModules, SystemModuleInfo } from '../../lib/rbac';
+import {
+  ROLE_COLOR_PRESETS,
+  ROLE_ICON_OPTIONS,
+  SYSTEM_ROLE_CATEGORIES,
+} from '../../data/systemRoles';
+import { getMinistryIconComponent } from '../../utils/ministryIcons';
 
-export const ALL_SYSTEM_TABS = [
-  'dashboard',
-  'directory',
-  'events',
-  'finances',
-  'coop',
-  'ministries',
-  'worship',
-  'dance',
-  'women',
-  'ushers',
-  'theater',
-  'chat',
-  'settings',
-  'developer',
-] as const;
-
-export type SystemTabId = typeof ALL_SYSTEM_TABS[number];
-
-export interface SystemModuleInfo {
-  id: string;
-  label: string;
-  shortLabel?: string;
-  category: 'General' | 'Administración' | 'Ministerios' | 'Secciones Personalizadas' | 'Comunidad' | 'Técnico';
-  iconName: string;
-  color?: string;
-  description?: string;
-  isCustomSection?: boolean;
-  isMinistry?: boolean;
+interface CustomRoleModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  roleToEdit?: CustomRole | null;
+  config: ChurchConfig;
+  onSave: (role: CustomRole) => Promise<void> | void;
+  isSaving?: boolean;
 }
 
-/**
- * Retorna todos los módulos y páginas existentes en el sistema en tiempo real,
- * integrando las pestañas base, todos los ministerios activos (estándar y nuevos)
- * y todas las secciones personalizadas creadas dinámicamente por el usuario.
- */
-export function getAllAvailableSystemModules(config?: ChurchConfig): SystemModuleInfo[] {
-  // 1. Módulos Principales del Sistema
-  const coreModules: SystemModuleInfo[] = [
-    {
-      id: 'dashboard',
-      label: 'Inicio / Dashboard',
-      shortLabel: 'Inicio',
-      category: 'General',
-      iconName: 'LayoutDashboard',
-      color: '#4f46e5',
-      description: 'Vista principal, métricas y resumen de actividades',
-    },
-    {
-      id: 'directory',
-      label: 'Directorio de Miembros',
-      shortLabel: 'Directorio',
-      category: 'General',
-      iconName: 'Users',
-      color: '#6366f1',
-      description: 'Fichas pastorales, familias, células y bautismos',
-    },
-    {
-      id: 'events',
-      label: 'Agendas y Eventos',
-      shortLabel: 'Agendas',
-      category: 'General',
-      iconName: 'Calendar',
-      color: '#d97706',
-      description: 'Calendario eclesial, cultos dominicales y programas',
-    },
-    {
-      id: 'finances',
-      label: 'Finanzas & Diezmos',
-      shortLabel: 'Finanzas',
-      category: 'Administración',
-      iconName: 'DollarSign',
-      color: '#059669',
-      description: 'Control de ingresos, diezmos, ofrendas y egresos',
-    },
-    {
-      id: 'coop',
-      label: 'Minicooperativa & Campamentos',
-      shortLabel: 'Minicooperativa',
-      category: 'Administración',
-      iconName: 'PiggyBank',
-      color: '#ea580c',
-      description: 'Cuentas de ahorro, préstamos y recaudación',
-    },
-    {
-      id: 'ministries',
-      label: 'Centro de Ministerios (Hub)',
-      shortLabel: 'Ministerios',
-      category: 'Ministerios',
-      iconName: 'Sparkles',
-      color: '#7c3aed',
-      description: 'Acceso general al centro de ministerios eclesiales',
-    },
-    {
-      id: 'chat',
-      label: 'Grupos & Chat Eclesial',
-      shortLabel: 'Chat',
-      category: 'Comunidad',
-      iconName: 'MessageSquare',
-      color: '#2563eb',
-      description: 'Canales de comunicación, oración y células',
-    },
-    {
-      id: 'settings',
-      label: 'Configuración & Temas',
-      shortLabel: 'Configuración',
-      category: 'Administración',
-      iconName: 'Settings',
-      color: '#4338ca',
-      description: 'Ajustes visuales, identidad eclesiástica y gestión de roles',
-    },
-    {
-      id: 'developer',
-      label: 'Panel de Desarrollador',
-      shortLabel: 'Desarrollador',
-      category: 'Técnico',
-      iconName: 'Terminal',
-      color: '#6b21a8',
-      description: 'Consola técnica, creador de secciones y papelera',
-    },
-  ];
+const ICON_MAP: Record<string, React.ElementType> = {
+  Shield,
+  KeyRound,
+  Users,
+  Star,
+  Sparkles,
+  UserCheck,
+  BookOpen,
+  Heart,
+  DollarSign,
+  Compass,
+  Music,
+  Award,
+  Lock,
+  Layers,
+};
 
-  // 2. Ministerios dinámicos (estándar + personalizados creados por el usuario)
-  const ministryList = Array.isArray(config?.ministries) && config.ministries.length > 0
-    ? config.ministries
-    : DEFAULT_MINISTRIES;
+export const CustomRoleModal: React.FC<CustomRoleModalProps> = ({
+  isOpen,
+  onClose,
+  roleToEdit,
+  config,
+  onSave,
+  isSaving = false,
+}) => {
+  const allModules: SystemModuleInfo[] = useMemo(() => {
+    return getAllAvailableSystemModules(config);
+  }, [config]);
 
-  const dynamicMinistries: SystemModuleInfo[] = ministryList
-    .filter((m) => m.enabled !== false)
-    .sort((a, b) => (a.order || 0) - (b.order || 0))
-    .map((m) => ({
-      id: m.id,
-      label: `Ministerio: ${m.name}`,
-      shortLabel: m.shortName || m.name,
-      category: 'Ministerios',
-      iconName: m.iconName || 'Sparkles',
-      color: m.color || '#7c3aed',
-      description: m.description || `Módulo del ministerio ${m.name}`,
-      isMinistry: true,
-    }));
+  // Group modules by category for clean matrix
+  const categorizedModules: Record<string, SystemModuleInfo[]> = useMemo(() => {
+    const groups: Record<string, SystemModuleInfo[]> = {
+      'General': [],
+      'Administración': [],
+      'Ministerios': [],
+      'Secciones Personalizadas': [],
+      'Comunidad': [],
+      'Técnico': [],
+    };
 
-  // 3. Secciones Personalizadas dinámicas (todas las creadas en el Creador de Secciones)
-  const customSecList = Array.isArray(config?.customSections) && config.customSections.length > 0
-    ? config.customSections
-    : DEFAULT_CUSTOM_SECTIONS;
+    allModules.forEach((mod) => {
+      const cat = groups[mod.category] ? mod.category : 'General';
+      groups[cat].push(mod);
+    });
 
-  const dynamicCustomSections: SystemModuleInfo[] = customSecList
-    .filter((s) => s.enabled !== false)
-    .sort((a, b) => (a.order || 0) - (b.order || 0))
-    .map((s) => ({
-      id: s.slug || s.id,
-      label: `Sección: ${s.name}`,
-      shortLabel: s.shortName || s.name,
-      category: 'Secciones Personalizadas',
-      iconName: s.iconName || 'Database',
-      color: s.color || '#0284c7',
-      description: s.description || `Sección personalizada ${s.name}`,
-      isCustomSection: true,
-    }));
+    return groups;
+  }, [allModules]);
 
-  // Retornamos todos los módulos consolidados
-  return [...coreModules, ...dynamicMinistries, ...dynamicCustomSections];
-}
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState<CustomRole['category']>('General');
+  const [color, setColor] = useState('#4f46e5');
+  const [iconName, setIconName] = useState('Shield');
+  const [allowedTabs, setAllowedTabs] = useState<string[]>(['dashboard', 'events', 'chat']);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-/**
- * Retorna las pestañas por defecto para cada rol del sistema según la regla de negocio:
- * - Desarrollador: Acceso total
- * - Administrador: Acceso administrativo, ministerios y chat
- * - Contador: Inicio, Directorio, Finanzas, Minicooperativa y Chat
- * - Líder de Jóvenes: Inicio, Directorio, Agendas, Ministerios y Chat
- * - Líder: Directorio, Agendas y Chat (sin Inicio ni ministerios)
- * - Miembro: Inicio, Agendas/Eventos y Chat
- * - Alabanza: Alabanza, Centro de Ministerios y Chat
- * - Danza: Danza, Centro de Ministerios y Chat
- * - Damas: Damas, Centro de Ministerios y Chat
- * - Servidores: Servidores / Protocolo, Centro de Ministerios y Chat
- * - Teatro: Teatro / Drama, Centro de Ministerios y Chat
- */
-export function getDefaultAllowedTabsForRole(role: string, customRoles?: CustomRole[]): string[] {
-  // 1. Revisar si coincide con un rol personalizado creado por el Desarrollador
-  if (customRoles && Array.isArray(customRoles)) {
-    const customMatch = customRoles.find(
-      (r) => r.name.toLowerCase().trim() === (role || '').toLowerCase().trim()
-    );
-    if (customMatch && Array.isArray(customMatch.allowedTabs) && customMatch.allowedTabs.length > 0) {
-      return customMatch.allowedTabs;
-    }
-  }
-
-  // 2. Roles nativos del sistema
-  switch (role) {
-    case 'Desarrollador':
-      return [
-        'dashboard',
-        'directory',
-        'events',
-        'finances',
-        'coop',
-        'ministries',
-        'worship',
-        'dance',
-        'women',
-        'ushers',
-        'theater',
-        'chat',
-        'settings',
-        'developer',
-      ];
-    case 'Administrador':
-      return [
-        'dashboard',
-        'directory',
-        'events',
-        'finances',
-        'coop',
-        'ministries',
-        'worship',
-        'dance',
-        'women',
-        'ushers',
-        'theater',
-        'chat',
-        'settings',
-      ];
-    case 'Contador':
-      return ['dashboard', 'directory', 'finances', 'coop', 'chat'];
-    case 'Líder de Jóvenes':
-      return [
-        'dashboard',
-        'directory',
-        'events',
-        'ministries',
-        'worship',
-        'dance',
-        'women',
-        'ushers',
-        'theater',
-        'chat',
-      ];
-    case 'Líder':
-      return [
-        'directory',
-        'events',
-        'chat',
-      ];
-    case 'Miembro':
-      return ['dashboard', 'events', 'chat'];
-    case 'Alabanza':
-      return ['ministries', 'worship', 'chat'];
-    case 'Danza':
-      return ['ministries', 'dance', 'chat'];
-    case 'Damas':
-      return ['ministries', 'women', 'chat'];
-    case 'Servidores':
-      return ['ministries', 'ushers', 'chat'];
-    case 'Teatro':
-      return ['ministries', 'theater', 'chat'];
-    default:
-      return ['dashboard', 'chat'];
-  }
-}
-
-/**
- * Obtiene la lista final y segura de pestañas autorizadas para el usuario actual.
- */
-export function getEffectiveAllowedTabs(
-  user: UserProfile | null | undefined,
-  customRoles?: CustomRole[]
-): string[] {
-  if (!user) return ['dashboard'];
-  if (user.role === 'Desarrollador') {
-    return [
-      'dashboard',
-      'directory',
-      'events',
-      'finances',
-      'coop',
-      'ministries',
-      'worship',
-      'dance',
-      'women',
-      'ushers',
-      'theater',
-      'chat',
-      'settings',
-      'developer',
-      ...(user.allowedTabs || []),
-    ];
-  }
-
-  // Si tiene pestañas configuradas explícitamente y no están vacías, usamos esas
-  if (user.allowedTabs && user.allowedTabs.length > 0) {
-    const defaultTabs = getDefaultAllowedTabsForRole(user.role, customRoles);
-    if (defaultTabs.includes('chat') && !user.allowedTabs.includes('chat')) {
-      return [...user.allowedTabs, 'chat'];
-    }
-    return user.allowedTabs;
-  }
-
-  // De lo contrario, usamos los permisos estrictos de su rol
-  return getDefaultAllowedTabsForRole(user.role, customRoles);
-}
-
-/**
- * Comprueba si el usuario tiene permiso para acceder a una pestaña específica
- */
-export function isTabAllowedForUser(tabId: string, user: UserProfile | null | undefined): boolean {
-  if (!user) return false;
-  if (user.role === 'Desarrollador') return true;
-  const allowed = getEffectiveAllowedTabs(user);
-  if (allowed.includes(tabId)) return true;
-  if (tabId === 'ministries') {
-    // Si el usuario tiene acceso a cualquier ministerio o 'ministries'
-    const ministryKeywords = ['worship', 'dance', 'women', 'ushers', 'theater', 'ministries'];
-    return (
-      allowed.includes('ministries') ||
-      allowed.some((tab) => ministryKeywords.includes(tab) || tab.startsWith('min_') || tab.startsWith('sec_'))
-    );
-  }
-  return false;
-}
-
-/**
- * Comprueba si un usuario tiene acceso específico a un ministerio individual.
- * Permite a los usuarios ingresar a la sección de ministerios, pero bloquea
- * aquellos ministerios a los que no pertenecen.
- */
-export function isMinistryAccessibleForUser(
-  ministryId: string,
-  user: UserProfile | null | undefined,
-  members?: Member[]
-): boolean {
-  if (!user) return false;
-  // Desarrollador, Administrador tienen acceso total a todos los ministerios
-  if (user.role === 'Desarrollador' || user.role === 'Administrador') {
-    return true;
-  }
-
-  // Roles directos de ministerio
-  if (user.role === 'Alabanza' && ministryId === 'worship') return true;
-  if (user.role === 'Danza' && ministryId === 'dance') return true;
-  if (user.role === 'Damas' && ministryId === 'women') return true;
-  if (user.role === 'Servidores' && ministryId === 'ushers') return true;
-  if (user.role === 'Teatro' && ministryId === 'theater') return true;
-
-  // Comprobar pestañas explícitas autorizadas para el usuario
-  const effective = getEffectiveAllowedTabs(user);
-  if (effective.includes(ministryId)) return true;
-
-  // Comprobar si el usuario está vinculado a un miembro de la congregación que pertenece a ese ministerio
-  if (members && members.length > 0) {
-    const userEmail = (user.email || '').trim().toLowerCase();
-    const userName = (user.name || '').trim().toLowerCase();
-    const linkedMember = members.find(
-      (m) =>
-        (m.email && m.email.trim().toLowerCase() === userEmail) ||
-        (m.fullName && m.fullName.trim().toLowerCase() === userName)
-    );
-    if (linkedMember && Array.isArray(linkedMember.ministries)) {
-      if (linkedMember.ministries.includes(ministryId)) {
-        return true;
+  // Initialize or reset form when modal opens / roleToEdit changes
+  React.useEffect(() => {
+    if (isOpen) {
+      if (roleToEdit) {
+        setName(roleToEdit.name || '');
+        setDescription(roleToEdit.description || '');
+        setCategory(roleToEdit.category || 'General');
+        setColor(roleToEdit.color || '#4f46e5');
+        setIconName(roleToEdit.iconName || 'Shield');
+        setAllowedTabs(roleToEdit.allowedTabs || ['dashboard', 'events', 'chat']);
+      } else {
+        setName('');
+        setDescription('');
+        setCategory('Liderazgo');
+        setColor('#8b5cf6');
+        setIconName('Shield');
+        setAllowedTabs(['dashboard', 'directory', 'events', 'chat']);
       }
+      setErrorMsg(null);
     }
-  }
+  }, [isOpen, roleToEdit]);
 
-  return false;
-}
+  if (!isOpen) return null;
 
-/**
- * Comprueba si el usuario tiene permiso para acceder a una sección personalizada según los roles configurados.
- */
-export function isCustomSectionAccessibleForUser(
-  section: CustomSectionItem,
-  user: UserProfile | null | undefined
-): boolean {
-  if (!user) return section.isPublic ?? true;
-  // Desarrollador y Administrador tienen acceso total para supervisar y editar
-  if (user.role === 'Desarrollador' || user.role === 'Administrador') {
-    return true;
-  }
-  // Si la sección no está habilitada
-  if (section.enabled === false) {
-    return false;
-  }
-  // Si no se especificaron roles permitidos o incluye 'Todos', está disponible para toda la congregación
-  const allowed = section.allowedRoles;
-  if (!allowed || allowed.length === 0 || (allowed as string[]).includes('Todos')) {
-    return true;
-  }
-  // Verificar si el rol del usuario actual está en la lista de roles autorizados
-  return (allowed as string[]).includes(user.role);
-}
+  const toggleTab = (tabId: string) => {
+    setAllowedTabs((prev) =>
+      prev.includes(tabId) ? prev.filter((id) => id !== tabId) : [...prev, tabId]
+    );
+  };
 
+  const handleSelectAll = () => {
+    // Excluir 'developer' por seguridad si no es explícitamente requerido
+    const all = allModules.map((m) => m.id);
+    setAllowedTabs(all);
+  };
+
+  const handleDeselectAll = () => {
+    setAllowedTabs(['chat']);
+  };
+
+  const handleApplyPreset = (preset: 'basic' | 'admin' | 'ministry' | 'leader') => {
+    switch (preset) {
+      case 'basic':
+        setAllowedTabs(['dashboard', 'events', 'chat']);
+        break;
+      case 'leader':
+        setAllowedTabs(['dashboard', 'directory', 'events', 'chat']);
+        break;
+      case 'ministry':
+        setAllowedTabs(['ministries', 'worship', 'dance', 'women', 'ushers', 'theater', 'chat']);
+        break;
+      case 'admin':
+        setAllowedTabs(['dashboard', 'directory', 'events', 'finances', 'coop', 'ministries', 'settings', 'chat']);
+        break;
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = name.trim();
+
+    if (!cleanName) {
+      setErrorMsg('El nombre del rol es obligatorio.');
+      return;
+    }
+
+    if (allowedTabs.length === 0) {
+      setErrorMsg('Debes asignar al menos un módulo o sección autorizada para este rol.');
+      return;
+    }
+
+    const roleData: CustomRole = {
+      id: roleToEdit ? roleToEdit.id : `role_${Date.now()}`,
+      name: cleanName,
+      description: description.trim(),
+      category: category || 'General',
+      color: color || '#4f46e5',
+      iconName: iconName || 'Shield',
+      allowedTabs: allowedTabs,
+      isSystem: roleToEdit ? Boolean(roleToEdit.isSystem) : false,
+      createdAt: roleToEdit?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await onSave(roleData);
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Error al guardar el rol en Firebase.');
+    }
+  };
+
+  const SelectedIcon = ICON_MAP[iconName] || Shield;
+
+  return (
+    <div
+      id="custom-role-modal-backdrop"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm overflow-y-auto"
+    >
+      <div
+        id="custom-role-modal-container"
+        className="relative w-full max-w-3xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-200"
+      >
+        {/* Header con gradiente distintivo */}
+        <div className="relative p-5 sm:p-6 bg-gradient-to-r from-purple-700 via-indigo-700 to-slate-900 text-white flex items-center justify-between border-b border-white/10 shrink-0">
+          <div className="flex items-center space-x-3.5">
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg border border-white/20 transition-colors"
+              style={{ backgroundColor: color }}
+            >
+              <SelectedIcon className="w-6 h-6 text-white drop-shadow" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-lg sm:text-xl font-black text-white">
+                  {roleToEdit ? `Editar Rol: ${roleToEdit.name}` : 'Crear Nuevo Rol de Sistema'}
+                </h3>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-400/20 text-emerald-300 border border-emerald-400/30">
+                  <Cloud className="w-3 h-3" />
+                  Firebase DB
+                </span>
+              </div>
+              <p className="text-xs text-purple-200 mt-0.5">
+                {roleToEdit
+                  ? 'Actualiza los permisos, color distintivo y módulos en Firebase'
+                  : 'Define el nombre, permisos y módulos. Se guardará de inmediato en Firebase Firestore'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-2xl hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Formulario con Scroll */}
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 text-xs sm:text-sm">
+          {errorMsg && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-medium text-xs flex items-center gap-2">
+              <Info className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* Tarjeta de Previsualización en Vivo */}
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-sm"
+                style={{ backgroundColor: color }}
+              >
+                <SelectedIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
+                    {name.trim() || 'Nombre del Rol'}
+                  </span>
+                  <span
+                    className="px-2 py-0.5 rounded-lg text-[10px] font-bold border"
+                    style={{
+                      borderColor: `${color}40`,
+                      backgroundColor: `${color}15`,
+                      color: color,
+                    }}
+                  >
+                    {category}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
+                  {description.trim() || 'Sin descripción ingresada aún'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 self-end sm:self-center">
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                {allowedTabs.length} {allowedTabs.length === 1 ? 'módulo' : 'módulos'} activos
+              </span>
+            </div>
+          </div>
+
+          {/* Nombre y Categoría */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Nombre del Rol *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Ej. Secretario(a) General, Tesorero, Pastor Juvenil"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold focus:ring-2 focus:ring-purple-500/20"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Categoría Eclesial
+              </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as any)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold focus:ring-2 focus:ring-purple-500/20"
+              >
+                {SYSTEM_ROLE_CATEGORIES.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Descripción */}
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Descripción y Funciones del Rol
+            </label>
+            <textarea
+              rows={2}
+              placeholder="Explica qué funciones cumple este rol y qué tipo de usuarios deben tenerlo..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
+            />
+          </div>
+
+          {/* Selector de Color e Ícono */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Paleta de Color */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 space-y-2">
+              <label className="block font-bold text-slate-700 dark:text-slate-300">
+                Color Distintivo
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                {ROLE_COLOR_PRESETS.map((preset) => (
+                  <button
+                    key={preset.hex}
+                    type="button"
+                    title={preset.label}
+                    onClick={() => setColor(preset.hex)}
+                    className={`w-7 h-7 rounded-xl flex items-center justify-center transition-transform cursor-pointer ${
+                      color === preset.hex ? 'scale-120 ring-2 ring-purple-500 ring-offset-2 dark:ring-offset-slate-900' : 'hover:scale-110 opacity-80 hover:opacity-100'
+                    }`}
+                    style={{ backgroundColor: preset.hex }}
+                  >
+                    {color === preset.hex && <Check className="w-4 h-4 text-white drop-shadow" />}
+                  </button>
+                ))}
+                <div className="flex items-center gap-1 ml-auto">
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="w-7 h-7 p-0 rounded-lg border-0 cursor-pointer"
+                  />
+                  <span className="font-mono text-[10px] text-slate-500">{color}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Selector de Ícono */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 space-y-2">
+              <label className="block font-bold text-slate-700 dark:text-slate-300">
+                Ícono Representativo
+              </label>
+              <div className="grid grid-cols-7 gap-1.5">
+                {ROLE_ICON_OPTIONS.map((opt) => {
+                  const IconComp = ICON_MAP[opt.id] || Shield;
+                  const isSelected = iconName === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      title={opt.label}
+                      onClick={() => setIconName(opt.id)}
+                      className={`p-2 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-purple-600 text-white shadow-md'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 border border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <IconComp className="w-4 h-4" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Matriz de Módulos & Pestañas Autorizadas */}
+          <div className="space-y-3 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <div>
+                <h4 className="font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-purple-600" />
+                  Módulos y Secciones Autorizadas para este Rol
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Los usuarios asignados a este rol tendrán acceso inmediato a los módulos marcados.
+                </p>
+              </div>
+
+              {/* Botones de presets rápidos */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-purple-950 text-slate-700 dark:text-slate-300 hover:text-purple-700 dark:hover:text-purple-300 text-[10px] font-bold transition-colors cursor-pointer"
+                >
+                  Seleccionar Todo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('basic')}
+                  className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-purple-950 text-slate-700 dark:text-slate-300 hover:text-purple-700 dark:hover:text-purple-300 text-[10px] font-bold transition-colors cursor-pointer"
+                >
+                  Básico (Miembro)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('leader')}
+                  className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-purple-950 text-slate-700 dark:text-slate-300 hover:text-purple-700 dark:hover:text-purple-300 text-[10px] font-bold transition-colors cursor-pointer"
+                >
+                  Liderazgo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('admin')}
+                  className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-purple-950 text-slate-700 dark:text-slate-300 hover:text-purple-700 dark:hover:text-purple-300 text-[10px] font-bold transition-colors cursor-pointer"
+                >
+                  Administración
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeselectAll}
+                  className="px-2 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-[10px] font-bold transition-colors cursor-pointer"
+                >
+                  Limpiar
+                </button>
+              </div>
+            </div>
+
+            {/* Checklist agrupado por categoría */}
+            <div className="space-y-4 max-h-72 overflow-y-auto pr-1">
+              {(Object.entries(categorizedModules) as [string, SystemModuleInfo[]][]).map(([catTitle, modules]) => {
+                if (modules.length === 0) return null;
+                return (
+                  <div key={catTitle} className="space-y-2">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                      {catTitle}
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {modules.map((mod) => {
+                        const isChecked = allowedTabs.includes(mod.id);
+                        const IconComponent = getMinistryIconComponent(mod.iconName);
+
+                        return (
+                          <div
+                            key={mod.id}
+                            onClick={() => toggleTab(mod.id)}
+                            className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                              isChecked
+                                ? 'bg-purple-50/70 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700/60 shadow-xs'
+                                : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+                              <div
+                                className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                                style={{
+                                  backgroundColor: isChecked ? `${mod.color || '#8b5cf6'}20` : '#e2e8f0',
+                                  color: isChecked ? mod.color || '#8b5cf6' : '#64748b',
+                                }}
+                              >
+                                <IconComponent className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                  {mod.label}
+                                </p>
+                                {mod.description && (
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                    {mod.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}} // Handled by outer div
+                              className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-slate-300 dark:border-slate-600 pointer-events-none"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Footer Informativo Firebase */}
+          <div className="p-3 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200/50 dark:border-indigo-800/50 flex items-center justify-between text-[11px] text-indigo-700 dark:text-indigo-300">
+            <span className="flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5" />
+              Colección Firestore: <code className="font-mono font-bold">customRoles</code>
+            </span>
+            <span className="font-medium text-[10px] text-indigo-500">
+              Sincronización en tiempo real
+            </span>
+          </div>
+
+          {/* Botones de acción */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs shadow-md shadow-purple-600/30 transition-all flex items-center space-x-2 cursor-pointer disabled:opacity-50"
+            >
+              <Cloud className="w-4 h-4" />
+              <span>{isSaving ? 'Guardando en Firebase...' : 'Guardar Rol en Firebase'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};

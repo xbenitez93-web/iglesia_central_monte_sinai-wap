@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { PageElementItem, PageMenuItem, TabType } from '../../types';
 import { getMinistryIconComponent } from '../../utils/ministryIcons';
+import { UniversalVideoPlayer } from '../UniversalVideoPlayer';
 
 interface PageElementsRendererProps {
   elements: PageElementItem[];
@@ -851,18 +852,15 @@ export const PageElementsRenderer: React.FC<PageElementsRendererProps> = ({
       }
 
       case 'video': {
-        const embedUrl = getEmbedYouTubeUrl(el.videoUrl || 'https://www.youtube.com/embed/live_stream');
         elementContent = (
           <div className="space-y-2">
-            <div className="aspect-video w-full rounded-2xl overflow-hidden shadow-md bg-black border border-slate-800">
-              <iframe
-                src={embedUrl}
-                title={el.title || 'Video Reproductor'}
-                className="w-full h-full border-0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
+            <UniversalVideoPlayer
+              url={el.videoUrl || 'https://www.youtube.com/watch?v=k1-TrAvp_xs'}
+              title={el.title || 'Video'}
+              autoPlay={false}
+              controls={true}
+              showBadge={true}
+            />
             {el.title && (
               <div className="px-1">
                 <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200">{el.title}</h5>

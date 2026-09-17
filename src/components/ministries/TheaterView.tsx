@@ -939,13 +939,13 @@ export const TheaterView: React.FC<TheaterViewProps> = ({
               <div>
                 <label className="block font-semibold mb-1 flex items-center space-x-1 text-red-600 dark:text-red-400">
                   <Play className="w-3.5 h-3.5 fill-red-600" />
-                  <span>Enlace de Video en YouTube para Ensayo / Referencia</span>
+                  <span>Enlace de Video para Ensayo / Referencia (YouTube, Facebook, TikTok, Instagram, etc.)</span>
                 </label>
                 <input
                   type="url"
                   value={playForm.youtubeUrl || ''}
                   onChange={(e) => setPlayForm({ ...playForm, youtubeUrl: e.target.value })}
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder="https://... (YouTube, Facebook, TikTok, Instagram o MP4)"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                 />
               </div>
@@ -1148,13 +1148,13 @@ export const TheaterView: React.FC<TheaterViewProps> = ({
               <div>
                 <label className="block font-semibold mb-1 flex items-center space-x-1 text-red-600 dark:text-red-400">
                   <Play className="w-3.5 h-3.5 fill-red-600" />
-                  <span>Enlace de Video en YouTube para Ensayo</span>
+                  <span>Enlace de Video para Ensayo (YouTube, Facebook, TikTok, Instagram, etc.)</span>
                 </label>
                 <input
                   type="url"
                   value={rehearsalForm.youtubeUrl || ''}
                   onChange={(e) => setRehearsalForm({ ...rehearsalForm, youtubeUrl: e.target.value })}
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder="https://... (YouTube, Facebook, TikTok, Instagram o MP4)"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                 />
               </div>

@@ -11,6 +11,8 @@ import {
   Video,
 } from 'lucide-react';
 import { SubTabVideo, CustomSectionSubTab } from '../../../types';
+import { UniversalVideoPlayer } from '../../UniversalVideoPlayer';
+import { parseUniversalVideo } from '../../../lib/videoUtils';
 
 interface SubTabVideosViewProps {
   subTab: CustomSectionSubTab;
@@ -18,24 +20,6 @@ interface SubTabVideosViewProps {
   onShowToast: (message: string, type?: 'success' | 'danger' | 'info') => void;
   canEdit?: boolean;
 }
-
-// Convert common YouTube URLs to embed format
-const getEmbedUrl = (url: string): string => {
-  if (!url) return '';
-  if (url.includes('youtube.com/watch?v=')) {
-    const videoId = url.split('watch?v=')[1]?.split('&')[0];
-    return `https://www.youtube.com/embed/${videoId}`;
-  }
-  if (url.includes('youtu.be/')) {
-    const videoId = url.split('youtu.be/')[1]?.split('?')[0];
-    return `https://www.youtube.com/embed/${videoId}`;
-  }
-  if (url.includes('vimeo.com/')) {
-    const vimeoId = url.split('vimeo.com/')[1]?.split('?')[0];
-    return `https://player.vimeo.com/video/${vimeoId}`;
-  }
-  return url;
-};
 
 export const SubTabVideosView: React.FC<SubTabVideosViewProps> = ({
   subTab,
@@ -109,6 +93,9 @@ export const SubTabVideosView: React.FC<SubTabVideosViewProps> = ({
       return;
     }
 
+    const parsed = parseUniversalVideo(form.videoUrl?.trim());
+    const effectiveThumbnail = form.thumbnailUrl?.trim() || parsed.thumbnailUrl || '';
+
     const newVideo: SubTabVideo = {
       id: editingId || `vid_${Date.now()}`,
       title: form.title.trim(),
@@ -117,7 +104,7 @@ export const SubTabVideosView: React.FC<SubTabVideosViewProps> = ({
       date: form.date || new Date().toISOString().split('T')[0],
       duration: form.duration || '',
       speakerOrChannel: form.speakerOrChannel || '',
-      thumbnailUrl: form.thumbnailUrl || '',
+      thumbnailUrl: effectiveThumbnail,
       category: form.category || 'General',
     };
 
@@ -226,38 +213,59 @@ export const SubTabVideosView: React.FC<SubTabVideosViewProps> = ({
               className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden hover:shadow-md transition-all flex flex-col justify-between group"
             >
               {/* Thumbnail / Video Preview */}
-              <div
-                className="relative aspect-video bg-slate-900 flex items-center justify-center cursor-pointer overflow-hidden group-hover:opacity-95"
-                onClick={() => setActivePlayerVideo(v)}
-              >
-                {v.thumbnailUrl ? (
-                  <img
-                    src={v.thumbnailUrl}
-                    alt={v.title}
-                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-tr from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center text-slate-500 p-4">
-                    <Tv className="w-10 h-10 mb-2 opacity-50" />
-                    <span className="text-[11px] text-center font-bold text-slate-300 line-clamp-1">
-                      {v.title}
-                    </span>
-                  </div>
-                )}
+              {(() => {
+                const parsedVideo = parseUniversalVideo(v.videoUrl);
+                const resolvedThumb = v.thumbnailUrl || parsedVideo.thumbnailUrl;
 
-                {/* Play Button Overlay */}
-                <div className="absolute inset-0 bg-black/30 flex items-center justify-center transition-all group-hover:bg-black/20">
-                  <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg transform transition-transform group-hover:scale-110">
-                    <Play className="w-6 h-6 ml-0.5 fill-current" />
-                  </div>
-                </div>
+                return (
+                  <div
+                    className="relative aspect-video bg-slate-900 flex items-center justify-center cursor-pointer overflow-hidden group-hover:opacity-95"
+                    onClick={() => setActivePlayerVideo(v)}
+                  >
+                    {resolvedThumb ? (
+                      <img
+                        src={resolvedThumb}
+                        alt={v.title}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                      />
+                    ) : parsedVideo.platform === 'direct' ? (
+                      <video
+                        src={parsedVideo.directVideoUrl}
+                        preload="metadata"
+                        muted
+                        className="w-full h-full object-cover pointer-events-none"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-tr from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center text-slate-500 p-4">
+                        <Tv className="w-10 h-10 mb-2 opacity-50" />
+                        <span className="text-[11px] text-center font-bold text-slate-300 line-clamp-1">
+                          {v.title}
+                        </span>
+                      </div>
+                    )}
 
-                {v.duration && (
-                  <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 text-white text-[10px] font-bold">
-                    {v.duration}
-                  </span>
-                )}
-              </div>
+                    {/* Platform Badge */}
+                    <div className="absolute top-2 left-2 z-10">
+                      <span className="px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-sm text-[9px] font-bold text-white border border-white/10 shadow-sm">
+                        {parsedVideo.platformLabel}
+                      </span>
+                    </div>
+
+                    {/* Play Button Overlay */}
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center transition-all group-hover:bg-black/20">
+                      <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg transform transition-transform group-hover:scale-110">
+                        <Play className="w-6 h-6 ml-0.5 fill-current" />
+                      </div>
+                    </div>
+
+                    {v.duration && (
+                      <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 text-white text-[10px] font-bold">
+                        {v.duration}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Video Info */}
               <div className="p-4 space-y-2.5 flex-1 flex flex-col justify-between">
@@ -344,15 +352,14 @@ export const SubTabVideosView: React.FC<SubTabVideosViewProps> = ({
             </div>
 
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-              <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-lg">
-                <iframe
-                  src={getEmbedUrl(activePlayerVideo.videoUrl)}
-                  title={activePlayerVideo.title}
-                  className="w-full h-full border-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
+              <UniversalVideoPlayer
+                url={activePlayerVideo.videoUrl}
+                title={activePlayerVideo.title}
+                autoPlay={true}
+                controls={true}
+                showBadge={true}
+                className="shadow-2xl"
+              />
 
               {activePlayerVideo.description && (
                 <p className="text-xs text-slate-300 leading-relaxed">
@@ -424,17 +431,133 @@ export const SubTabVideosView: React.FC<SubTabVideosViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Enlace URL del Video (YouTube / Vimeo / MP4) *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Enlace URL del Video (YouTube / Facebook / TikTok / Instagram / Vimeo / Drive / MP4) *
+                    </label>
+                    {form.videoUrl && parseUniversalVideo(form.videoUrl).isValid && (
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                        {parseUniversalVideo(form.videoUrl).platformLabel}
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="url"
                     required
                     value={form.videoUrl}
-                    onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
-                    placeholder="https://www.youtube.com/watch?v=..."
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const parsed = parseUniversalVideo(val);
+                      setForm((prev) => ({
+                        ...prev,
+                        videoUrl: val,
+                        // Auto-fill thumbnail if none provided and platform has one (YouTube, Dailymotion)
+                        thumbnailUrl: prev.thumbnailUrl || parsed.thumbnailUrl || '',
+                      }));
+                    }}
+                    placeholder="https://www.youtube.com/... o enlace de Facebook, TikTok, Instagram, MP4"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-red-500"
                   />
+
+                  {/* Ejemplos de enlaces rápidos */}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[10px] text-slate-400 font-medium">Ejemplos para probar:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = 'https://www.youtube.com/watch?v=k1-TrAvp_xs';
+                        const parsed = parseUniversalVideo(url);
+                        setForm((prev) => ({
+                          ...prev,
+                          videoUrl: url,
+                          title: prev.title || 'Alabanza y Adoración en Vivo',
+                          thumbnailUrl: parsed.thumbnailUrl || prev.thumbnailUrl,
+                        }));
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 text-[10px] font-bold hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer"
+                    >
+                      YouTube
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = 'https://www.facebook.com/watch/?v=10153231379946729';
+                        setForm((prev) => ({
+                          ...prev,
+                          videoUrl: url,
+                          title: prev.title || 'Video Comunitario en Facebook',
+                        }));
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 text-[10px] font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
+                    >
+                      Facebook
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = 'https://www.tiktok.com/@scout2015/video/6718335390845095173';
+                        setForm((prev) => ({
+                          ...prev,
+                          videoUrl: url,
+                          title: prev.title || 'Video Inspiracional de TikTok',
+                        }));
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-cyan-300 text-[10px] font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                    >
+                      TikTok
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = 'https://www.instagram.com/reel/C8xYz123456/';
+                        setForm((prev) => ({
+                          ...prev,
+                          videoUrl: url,
+                          title: prev.title || 'Reel Inspiracional de Instagram',
+                        }));
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-purple-500/10 to-pink-500/10 text-pink-600 dark:text-pink-400 text-[10px] font-bold hover:opacity-80 transition-opacity cursor-pointer border border-pink-500/20"
+                    >
+                      Instagram
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+                        setForm((prev) => ({
+                          ...prev,
+                          videoUrl: url,
+                          title: prev.title || 'Video Demostrativo MP4 HD',
+                        }));
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors cursor-pointer"
+                    >
+                      MP4 Directo
+                    </button>
+                  </div>
+
+                  {/* Live Video Preview in Form */}
+                  {form.videoUrl && form.videoUrl.trim() && (
+                    <div className="mt-3 space-y-2 p-3 rounded-2xl bg-slate-950 text-white border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-300 flex items-center space-x-1.5">
+                          <Play className="w-3.5 h-3.5 text-red-500 fill-current" />
+                          <span>Vista Previa de la URL ({parseUniversalVideo(form.videoUrl).platformLabel})</span>
+                        </span>
+                        <span className="text-[10px] font-semibold text-emerald-400">
+                          Reproduciendo en vivo
+                        </span>
+                      </div>
+                      <UniversalVideoPlayer
+                        url={form.videoUrl}
+                        title={form.title || 'Vista previa'}
+                        autoPlay={false}
+                        controls={true}
+                        showBadge={true}
+                        className="max-h-56"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

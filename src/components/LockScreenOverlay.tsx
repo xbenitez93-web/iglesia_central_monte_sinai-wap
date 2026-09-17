@@ -21,6 +21,7 @@ import {
   getCachedCustomVideoPreset,
   getCustomVideoPresetUrl,
 } from '../lib/deviceMediaStorage';
+import { getBackgroundLoopVideoUrl } from '../lib/videoUtils';
 import {
   Lock,
   Unlock,
@@ -84,6 +85,14 @@ export const LockScreenOverlay: React.FC<LockScreenOverlayProps> = ({
   const [isVideoError, setIsVideoError] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // Sync isMuted state whenever config.videoMuted changes
+  useEffect(() => {
+    if (config.videoMuted !== undefined) {
+      setIsMuted(config.videoMuted);
+    }
+  }, [config.videoMuted]);
 
   // Reset logo error when config logoUrl or church logo changes
   useEffect(() => {
@@ -243,28 +252,68 @@ export const LockScreenOverlay: React.FC<LockScreenOverlayProps> = ({
 
   // User activity trigger to ensure video playback starts or resumes immediately if paused
   const handleInteractionResume = useCallback(() => {
-    if (videoRef.current && videoRef.current.paused) {
-      videoRef.current.play().catch(() => {});
+    if (videoRef.current) {
+      if (videoRef.current.paused) {
+        videoRef.current.play().catch(() => {});
+      }
+      if (!isMuted && videoRef.current.muted) {
+        videoRef.current.muted = false;
+        videoRef.current.volume = 1.0;
+      }
     }
-  }, []);
+    if (!isMuted && iframeRef.current && iframeRef.current.contentWindow) {
+      try {
+        // YouTube unMute + setVolume 100
+        iframeRef.current.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*');
+        iframeRef.current.contentWindow.postMessage('{"event":"command","func":"setVolume","args":[100]}', '*');
+        iframeRef.current.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+        // Vimeo unMute
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({ method: 'setVolume', value: 1 }), '*');
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
+      } catch (_) {}
+    }
+  }, [isMuted]);
 
-  // Ensure video element plays smoothly with movement and no autoplay blocking
+  // Ensure video element plays smoothly with movement and audio configuration
   useEffect(() => {
     if (config.backgroundType === 'video' && videoRef.current && resolvedVideoUrl) {
       const vid = videoRef.current;
-      vid.defaultMuted = true;
-      vid.muted = isMuted;
       vid.playsInline = true;
+      vid.muted = isMuted;
+      if (!isMuted) {
+        vid.volume = 1.0;
+      }
       const promise = vid.play();
       if (promise !== undefined) {
         promise.catch(() => {
-          // If browser policy blocks audio playback, guarantee muted autoplay
-          vid.muted = true;
-          vid.play().catch(() => {});
+          // If browser policy blocks unmuted autoplay without user interaction,
+          // temporarily mute so video plays, until user interacts
+          if (!isMuted) {
+            vid.muted = true;
+            vid.play().catch(() => {});
+          }
         });
       }
     }
   }, [config.backgroundType, resolvedVideoUrl, isMuted]);
+
+  // Periodic unMute signal to iframe (YouTube/Vimeo) when audio is enabled
+  useEffect(() => {
+    if (!isMuted && iframeRef.current && config.backgroundType === 'video') {
+      const timeouts = [500, 1200, 2500, 4000].map((delay) =>
+        setTimeout(() => {
+          try {
+            iframeRef.current?.contentWindow?.postMessage('{"event":"command","func":"unMute","args":""}', '*');
+            iframeRef.current?.contentWindow?.postMessage('{"event":"command","func":"setVolume","args":[100]}', '*');
+            iframeRef.current?.contentWindow?.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+            iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ method: 'setVolume', value: 1 }), '*');
+            iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ method: 'play' }), '*');
+          } catch (_) {}
+        }, delay)
+      );
+      return () => timeouts.forEach(clearTimeout);
+    }
+  }, [isMuted, resolvedVideoUrl, config.backgroundType]);
 
   // Logo source resolution: Lock screen specific logo || Church configuration logo
   const logoSource = config.logoUrl || churchConfig?.logoUrl;
@@ -472,43 +521,64 @@ export const LockScreenOverlay: React.FC<LockScreenOverlayProps> = ({
                 }}
               />
             )}
-            {resolvedVideoUrl && (
-              <video
-                key={resolvedVideoUrl}
-                ref={videoRef}
-                src={resolvedVideoUrl}
-                autoPlay
-                loop
-                muted={isMuted}
-                playsInline
-                preload="auto"
-                onLoadedMetadata={(e) => {
-                  const vid = e.currentTarget;
-                  vid.defaultMuted = true;
-                  vid.muted = isMuted;
-                  vid.playsInline = true;
-                  vid.play().catch(() => {
-                    vid.muted = true;
-                    vid.play().catch(() => {});
-                  });
-                }}
-                onCanPlay={(e) => {
-                  const vid = e.currentTarget;
-                  if (vid.paused) {
-                    vid.muted = true;
-                    vid.play().catch(() => {});
-                  }
-                }}
-                onError={(e) => {
-                  console.warn('Error loading lock screen video source:', resolvedVideoUrl, e.type);
-                  setIsVideoError(true);
-                }}
-                className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
-                style={{
-                  filter: config.blurAmount > 0 ? `blur(${config.blurAmount}px)` : undefined,
-                }}
-              />
-            )}
+            {resolvedVideoUrl && (() => {
+              const loopInfo = getBackgroundLoopVideoUrl(resolvedVideoUrl, isMuted);
+              if (loopInfo.isIframe) {
+                return (
+                  <iframe
+                    key={resolvedVideoUrl}
+                    ref={iframeRef}
+                    src={loopInfo.url}
+                    title="Lock Screen Video Background"
+                    className="absolute inset-0 w-full h-full border-0 pointer-events-none scale-110"
+                    allow="accelerometer; autoplay *; clipboard-write; encrypted-media *; gyroscope; picture-in-picture *; web-share; fullscreen *"
+                    allowFullScreen
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    style={{
+                      filter: config.blurAmount > 0 ? `blur(${config.blurAmount}px)` : undefined,
+                    }}
+                  />
+                );
+              }
+              return (
+                <video
+                  key={resolvedVideoUrl}
+                  ref={videoRef}
+                  src={loopInfo.url}
+                  autoPlay
+                  loop
+                  muted={isMuted}
+                  playsInline
+                  preload="auto"
+                  onLoadedMetadata={(e) => {
+                    const vid = e.currentTarget;
+                    vid.muted = isMuted;
+                    if (!isMuted) {
+                      vid.volume = 1.0;
+                    }
+                    vid.playsInline = true;
+                    vid.play().catch(() => {
+                      vid.muted = true;
+                      vid.play().catch(() => {});
+                    });
+                  }}
+                  onCanPlay={(e) => {
+                    const vid = e.currentTarget;
+                    if (vid.paused) {
+                      vid.play().catch(() => {});
+                    }
+                  }}
+                  onError={(e) => {
+                    console.warn('Error loading lock screen video source:', resolvedVideoUrl, e.type);
+                    setIsVideoError(true);
+                  }}
+                  className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
+                  style={{
+                    filter: config.blurAmount > 0 ? `blur(${config.blurAmount}px)` : undefined,
+                  }}
+                />
+              );
+            })()}
           </div>
         )}
 
@@ -575,12 +645,57 @@ export const LockScreenOverlay: React.FC<LockScreenOverlayProps> = ({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setIsMuted(!isMuted);
+                const nextMuted = !isMuted;
+                setIsMuted(nextMuted);
+                if (videoRef.current) {
+                  videoRef.current.muted = nextMuted;
+                  if (!nextMuted) {
+                    videoRef.current.volume = 1.0;
+                    videoRef.current.play().catch(() => {});
+                  }
+                }
+                if (iframeRef.current && iframeRef.current.contentWindow) {
+                  try {
+                    if (nextMuted) {
+                      iframeRef.current.contentWindow.postMessage('{"event":"command","func":"mute","args":""}', '*');
+                      iframeRef.current.contentWindow.postMessage(JSON.stringify({ method: 'setVolume', value: 0 }), '*');
+                    } else {
+                      iframeRef.current.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*');
+                      iframeRef.current.contentWindow.postMessage('{"event":"command","func":"setVolume","args":[100]}', '*');
+                      iframeRef.current.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                      iframeRef.current.contentWindow.postMessage(JSON.stringify({ method: 'setVolume', value: 1 }), '*');
+                      iframeRef.current.contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
+                    }
+                  } catch (_) {}
+                }
               }}
-              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 text-white/80 transition-all cursor-pointer"
+              className={`px-3 py-2 rounded-xl backdrop-blur-md border text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer shadow-sm ${
+                isMuted
+                  ? 'bg-white/10 hover:bg-white/20 border-white/15 text-white/70 hover:text-white'
+                  : 'bg-emerald-500/30 hover:bg-emerald-500/40 border-emerald-400/50 text-emerald-200 shadow-emerald-500/20 ring-2 ring-emerald-500/30'
+              }`}
               title={isMuted ? 'Activar sonido del video' : 'Silenciar video'}
             >
-              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+              {isMuted ? <VolumeX className="w-4 h-4 text-slate-300" /> : <Volume2 className="w-4 h-4 text-emerald-300 animate-pulse" />}
+              <span className="text-[11px] font-semibold">
+                {isMuted ? 'Sin Sonido' : 'Con Sonido'}
+              </span>
+            </button>
+          )}
+
+          {/* Floating Audio Tap-to-Unmute indicator if unmuted */}
+          {config.backgroundType === 'video' && !isMuted && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleInteractionResume();
+              }}
+              className="hidden md:flex px-3 py-1.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/40 items-center space-x-1.5 border border-emerald-400/50 backdrop-blur-md cursor-pointer transition-all animate-pulse"
+              title="Haz clic para activar el audio en el navegador"
+            >
+              <Volume2 className="w-3.5 h-3.5 text-amber-200" />
+              <span>Audio Activo (Toca si no se oye)</span>
             </button>
           )}
 

@@ -59,6 +59,273 @@ async function startServer() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  // Resolve social media video URLs (Facebook, Instagram, TikTok, Twitter/X, YouTube, etc.)
+  app.post('/api/media/resolve-social-url', async (req, res) => {
+    try {
+      const { url } = req.body;
+      if (!url || typeof url !== 'string' || !url.trim()) {
+        return res.status(400).json({ error: 'URL no proporcionada o vacía.' });
+      }
+
+      const inputUrl = url.trim();
+      let canonicalUrl = inputUrl;
+      let platform = 'unknown';
+      let title = '';
+      let thumbnailUrl = '';
+      let directVideoUrl = '';
+      let isReel = false;
+      let videoId = '';
+
+      const lower = inputUrl.toLowerCase();
+
+      // 1. YouTube
+      if (lower.includes('youtube.com') || lower.includes('youtu.be')) {
+        platform = 'youtube';
+        let ytId = '';
+        const shortMatch = inputUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/i);
+        if (shortMatch) ytId = shortMatch[1];
+        if (!ytId) {
+          const vMatch = inputUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})/i);
+          if (vMatch) ytId = vMatch[1];
+        }
+        if (!ytId) {
+          const embedMatch = inputUrl.match(/\/embed\/([a-zA-Z0-9_-]{11})/i);
+          if (embedMatch) ytId = embedMatch[1];
+        }
+        if (!ytId) {
+          const shortsMatch = inputUrl.match(/\/shorts\/([a-zA-Z0-9_-]{11})/i);
+          if (shortsMatch) {
+            ytId = shortsMatch[1];
+            isReel = true;
+          }
+        }
+        if (ytId) {
+          videoId = ytId;
+          canonicalUrl = `https://www.youtube.com/watch?v=${ytId}`;
+          thumbnailUrl = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+          try {
+            const oembedRes = await fetch(
+              `https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`,
+              { signal: AbortSignal.timeout(3500) }
+            );
+            if (oembedRes.ok) {
+              const data = (await oembedRes.json()) as any;
+              if (data.title) title = data.title;
+              if (data.thumbnail_url) thumbnailUrl = data.thumbnail_url;
+            }
+          } catch (_) {}
+        }
+      }
+      // 2. Facebook (share links /share/v/, /share/r/, fb.watch, reels, mobile URLs)
+      else if (lower.includes('facebook.com') || lower.includes('fb.watch')) {
+        platform = 'facebook';
+        isReel = lower.includes('/reel') || lower.includes('/share/r/');
+
+        try {
+          const fbRes = await fetch(inputUrl, {
+            headers: {
+              'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+            redirect: 'follow',
+            signal: AbortSignal.timeout(5000),
+          });
+
+          if (fbRes.ok) {
+            const finalUrl = fbRes.url;
+            if (finalUrl && !finalUrl.includes('/login')) {
+              canonicalUrl = finalUrl;
+            }
+            const html = await fbRes.text();
+
+            const ogUrlMatch = html.match(/<meta property=["']og:url["'] content=["']([^"']+)["']/i);
+            if (ogUrlMatch && !ogUrlMatch[1].includes('/login')) {
+              canonicalUrl = ogUrlMatch[1];
+            }
+
+            const ogTitleMatch = html.match(/<meta property=["']og:title["'] content=["']([^"']+)["']/i);
+            if (ogTitleMatch) {
+              title = ogTitleMatch[1]
+                .replace(/&#xb7;/g, '•')
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"');
+            }
+
+            const ogImageMatch = html.match(/<meta property=["']og:image["'] content=["']([^"']+)["']/i);
+            if (ogImageMatch) {
+              thumbnailUrl = ogImageMatch[1].replace(/&amp;/g, '&');
+            }
+
+            const ogVideoMatch = html.match(
+              /<meta property=["']og:video(?::secure_url)?["'] content=["']([^"']+)["']/i
+            );
+            if (ogVideoMatch) {
+              directVideoUrl = ogVideoMatch[1].replace(/&amp;/g, '&');
+            }
+          }
+        } catch (_) {}
+
+        const vidMatch =
+          canonicalUrl.match(/[?&]v=([a-zA-Z0-9_-]+)/i) ||
+          canonicalUrl.match(/\/videos\/([a-zA-Z0-9_-]+)/i);
+        const rMatch =
+          canonicalUrl.match(/\/reel\/([a-zA-Z0-9_-]+)/i) ||
+          inputUrl.match(/\/reel\/([a-zA-Z0-9_-]+)/i);
+        const shareMatch = inputUrl.match(/\/share\/[vr]\/([a-zA-Z0-9_-]+)/i);
+
+        if (rMatch) {
+          videoId = rMatch[1];
+          isReel = true;
+          canonicalUrl = `https://www.facebook.com/reel/${rMatch[1]}`;
+        } else if (vidMatch) {
+          videoId = vidMatch[1];
+          canonicalUrl = `https://www.facebook.com/watch/?v=${vidMatch[1]}`;
+        } else if (shareMatch) {
+          videoId = shareMatch[1];
+          if (isReel) {
+            canonicalUrl = `https://www.facebook.com/reel/${shareMatch[1]}`;
+          } else {
+            canonicalUrl = `https://www.facebook.com/watch/?v=${shareMatch[1]}`;
+          }
+        }
+      }
+      // 3. TikTok (including vm.tiktok.com, vt.tiktok.com and short links)
+      else if (lower.includes('tiktok.com')) {
+        platform = 'tiktok';
+        isReel = true;
+
+        // 3a. Consultar oEmbed oficial de TikTok
+        try {
+          const oembedRes = await fetch(
+            `https://www.tiktok.com/oembed?url=${encodeURIComponent(inputUrl)}`,
+            {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+              signal: AbortSignal.timeout(4000),
+            }
+          );
+          if (oembedRes.ok) {
+            const data = await oembedRes.json();
+            if (data.title) title = data.title;
+            if (data.thumbnail_url) thumbnailUrl = data.thumbnail_url;
+            if (data.author_name && !title) title = `TikTok de @${data.author_name}`;
+            if (data.embed_product_id) videoId = String(data.embed_product_id);
+            if (videoId) {
+              const authorSlug = data.author_unique_id ? `@${data.author_unique_id}` : '@video';
+              canonicalUrl = `https://www.tiktok.com/${authorSlug}/video/${videoId}`;
+            }
+          }
+        } catch (_) {}
+
+        // 3b. Si oEmbed no resolvió el ID (enlaces móviles acortados vm.tiktok.com o vt.tiktok.com), seguir redirección
+        if (!videoId) {
+          try {
+            const ttRes = await fetch(inputUrl, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
+              redirect: 'follow',
+              signal: AbortSignal.timeout(5000),
+            });
+            if (ttRes.ok) {
+              if (ttRes.url) canonicalUrl = ttRes.url;
+              const html = await ttRes.text();
+              const ogTitleMatch = html.match(/<meta property=["']og:title["'] content=["']([^"']+)["']/i);
+              if (ogTitleMatch && !title) title = ogTitleMatch[1];
+              const ogImageMatch = html.match(/<meta property=["']og:image["'] content=["']([^"']+)["']/i);
+              if (ogImageMatch && !thumbnailUrl) thumbnailUrl = ogImageMatch[1];
+
+              // Reintentar oEmbed con la URL expandida si aún falta miniatura o id
+              if (canonicalUrl && canonicalUrl !== inputUrl && (!thumbnailUrl || !videoId)) {
+                try {
+                  const subOembed = await fetch(
+                    `https://www.tiktok.com/oembed?url=${encodeURIComponent(canonicalUrl)}`,
+                    { signal: AbortSignal.timeout(3000) }
+                  );
+                  if (subOembed.ok) {
+                    const subData = await subOembed.json();
+                    if (subData.title && !title) title = subData.title;
+                    if (subData.thumbnail_url && !thumbnailUrl) thumbnailUrl = subData.thumbnail_url;
+                    if (subData.embed_product_id) videoId = String(subData.embed_product_id);
+                  }
+                } catch (_) {}
+              }
+            }
+          } catch (_) {}
+
+          const ttVideoMatch =
+            canonicalUrl.match(/\/video\/(\d{15,22})/i) || inputUrl.match(/\/video\/(\d{15,22})/i);
+          if (ttVideoMatch) {
+            videoId = ttVideoMatch[1];
+            canonicalUrl = `https://www.tiktok.com/@video/video/${videoId}`;
+          }
+        }
+      }
+      // 4. Instagram (reels and posts)
+      else if (lower.includes('instagram.com') || lower.includes('instagr.am')) {
+        platform = 'instagram';
+        const reelMatch = inputUrl.match(/reels?\/([a-zA-Z0-9_-]+)/i);
+        const pMatch = inputUrl.match(/(?:p|tv)\/([a-zA-Z0-9_-]+)/i);
+        const code = reelMatch?.[1] || pMatch?.[1];
+        if (code) {
+          videoId = code;
+          isReel = !!reelMatch;
+          canonicalUrl = isReel
+            ? `https://www.instagram.com/reel/${code}/`
+            : `https://www.instagram.com/p/${code}/`;
+        }
+        try {
+          const igRes = await fetch(inputUrl, {
+            headers: { 'User-Agent': 'facebookexternalhit/1.1' },
+            redirect: 'follow',
+            signal: AbortSignal.timeout(4000),
+          });
+          if (igRes.ok) {
+            const html = await igRes.text();
+            const ogTitleMatch = html.match(/<meta property=["']og:title["'] content=["']([^"']+)["']/i);
+            if (ogTitleMatch) title = ogTitleMatch[1];
+            const ogImageMatch = html.match(/<meta property=["']og:image["'] content=["']([^"']+)["']/i);
+            if (ogImageMatch) thumbnailUrl = ogImageMatch[1];
+          }
+        } catch (_) {}
+      }
+      // 5. Twitter / X
+      else if (lower.includes('twitter.com') || lower.includes('x.com')) {
+        platform = 'twitter';
+        const tweetMatch = inputUrl.match(/status\/(\d+)/i);
+        if (tweetMatch) {
+          videoId = tweetMatch[1];
+          canonicalUrl = `https://twitter.com/i/status/${videoId}`;
+        }
+      }
+      // 6. Direct MP4 / WebM / Media
+      else if (
+        lower.endsWith('.mp4') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.mov') ||
+        lower.startsWith('/uploads/')
+      ) {
+        platform = 'direct';
+        directVideoUrl = inputUrl;
+        title = path.basename(inputUrl.split('?')[0]);
+      }
+
+      return res.json({
+        success: true,
+        originalUrl: inputUrl,
+        canonicalUrl,
+        platform,
+        videoId,
+        title:
+          title ||
+          (platform !== 'unknown' ? `${platform.toUpperCase()} Video` : 'Video en Línea'),
+        thumbnailUrl,
+        directVideoUrl,
+        isReel,
+      });
+    } catch (err: any) {
+      console.error('[Resolve Social URL] Error:', err);
+      return res.status(500).json({ error: err.message || 'Error al resolver URL' });
+    }
+  });
+
   // Cross-device Universal Media Upload API (Videos & Photos)
   app.post('/api/media/upload', (req, res) => {
     try {

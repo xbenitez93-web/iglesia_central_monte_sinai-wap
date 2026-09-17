@@ -1027,13 +1027,13 @@ export const UshersView: React.FC<UshersViewProps> = ({
               <div>
                 <label className="block font-semibold mb-1 flex items-center space-x-1 text-red-600 dark:text-red-400">
                   <Play className="w-3.5 h-3.5 fill-red-600" />
-                  <span>Enlace de Video en YouTube para Capacitación / Pauta</span>
+                  <span>Enlace de Video para Capacitación / Pauta (YouTube, Facebook, TikTok, Instagram, etc.)</span>
                 </label>
                 <input
                   type="url"
                   value={rosterForm.youtubeUrl || ''}
                   onChange={(e) => setRosterForm({ ...rosterForm, youtubeUrl: e.target.value })}
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder="https://... (YouTube, Facebook, TikTok, Instagram o MP4)"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                 />
               </div>
@@ -1126,13 +1126,13 @@ export const UshersView: React.FC<UshersViewProps> = ({
               <div>
                 <label className="block font-semibold mb-1 flex items-center space-x-1 text-red-600 dark:text-red-400">
                   <Play className="w-3.5 h-3.5 fill-red-600" />
-                  <span>Enlace de Video de Capacitación en YouTube</span>
+                  <span>Enlace de Video de Capacitación (YouTube, Facebook, TikTok, Instagram, etc.)</span>
                 </label>
                 <input
                   type="url"
                   value={protocolForm.youtubeUrl || ''}
                   onChange={(e) => setProtocolForm({ ...protocolForm, youtubeUrl: e.target.value })}
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder="https://... (YouTube, Facebook, TikTok, Instagram o MP4)"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                 />
               </div>
