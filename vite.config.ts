@@ -32,6 +32,10 @@ export default defineConfig({
             purpose: "any maskable"
           }
         ]
+      },
+      // Añade esta sección de workbox para permitir archivos grandes en el caché previo
+      workbox: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB
       }
     })
   ],
