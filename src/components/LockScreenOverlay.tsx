@@ -21,7 +21,7 @@ import {
   getCachedCustomVideoPreset,
   getCustomVideoPresetUrl,
 } from '../lib/deviceMediaStorage';
-import { getBackgroundLoopVideoUrl } from '../lib/videoUtils';
+import { getBackgroundLoopVideoUrl } from '../lib/VideoUtils';
 import {
   Lock,
   Unlock,
